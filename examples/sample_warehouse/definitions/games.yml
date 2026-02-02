@@ -1,0 +1,27 @@
+load_games:
+  catchup: false
+  owner: airflow
+  schedule: 0 0 1 9 *
+  max_active_runs: 1
+  max_retries: 2
+  tasks:
+
+    - id: get_batch
+      op_type: PythonOperator
+      source_file: utils/get_batch.py
+
+    - id: insert_to_staing
+      op_type: SnowflakeOperator
+      pool: nfl
+      source_file: examples/sample_warehouse/sql_scripts/staging/stg_game.sql
+      params:
+        TARGET_TABLE: STAGING.NFL_GAME
+        SOURCE_TABLE: INGESTION.NFL_GAME
+
+    - id: insert_to_fact
+      op_type: SnowflakeOperator
+      pool: nfl
+      source_file: examples/sample_warehouse/sql_scripts/fact/fct_game.sql
+      params:
+        TARGET_TABLE: FACT.NFL_GAME
+        SOURCE_TABLE: STAGING.NFL_GAME

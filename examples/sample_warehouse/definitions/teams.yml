@@ -1,0 +1,19 @@
+load_teams:
+  catchup: false
+  owner: airflow
+  schedule: 0 0 1 9 *
+  max_active_runs: 1
+  max_retries: 2
+  tasks:
+
+    - id: get_batch
+      op_type: PythonOperator
+      source_file: utils/get_batch.py
+
+    - id: update_dim_table
+      op_type: SnowflakeOperator
+      pool: nfl
+      source_file: examples/sample_warehouse/sql_scripts/dimension/dim_team.sql
+      params:
+        TARGET_TABLE: DIMENSION.NFL_TEAM
+        SOURCE_TABLE: INGESTION.NFL_TEAM

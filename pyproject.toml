@@ -1,0 +1,30 @@
+[project]
+name = "data-warehouse-analyzer"
+version = "0.1.0"
+description = "A tool to analyze SQL and YAML files for data warehouse logic"
+requires-python = ">=3.11"
+dependencies = [
+    "sqlglot>=20.0.0",
+    "pyyaml>=6.0",
+    "click>=8.1.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=7.4.0",
+    "black>=23.0.0",
+    "ruff>=0.1.0",
+]
+
+[project.scripts]
+dwat = "dwat.cli:main"
+
+[build-system]
+requires = ["setuptools>=68.0"]
+build-backend = "setuptools.build_meta"
+
+[tool.black]
+line-length = 100
+
+[tool.ruff]
+line-length = 100
