@@ -30,7 +30,8 @@ def extract_tasks(dag_list: list) -> list:
             id = task.get('id', None)
             operator = task.get('op_type', None)
             file = task.get('source_file', None)
+            params = task.get('params', None)
 
-            tasks.append((dag_name, id, operator, file))
+            tasks.append((dag_name, id, operator, file, params))
 
     return tasks

@@ -5,6 +5,7 @@ from pathlib import Path
 
 from dwat.parsers.dag_parser import load_yamls, extract_tasks
 from dwat.parsers.query_parser import ParseQuery
+from dwat.lineage import build_graph_from_dags, generate_html, open_in_browser
 
 @click.group()
 @click.version_option(version="0.1.0", prog_name="dwat")
@@ -43,6 +44,35 @@ def parse(path: Path):
     """Parse SQL file."""
     click.echo(type(path))
     ParseQuery(path)
+
+
+@main.command()
+@click.argument("path", type=click.Path(exists=True, path_type=Path))
+@click.option("--output", "-o", type=click.Path(path_type=Path), default="lineage.html",
+              help="Output HTML file path")
+@click.option("--open", "open_browser", is_flag=True, help="Open in browser after generating")
+def lineage(path: Path, output: Path, open_browser: bool):
+    """Generate interactive lineage visualization from DAG definitions."""
+    click.echo(f"Loading DAGs from: {path}")
+    dags = load_yamls(path)
+
+    if not dags:
+        click.echo("No YAML files found.", err=True)
+        return
+
+    click.echo(f"Found {len(dags)} DAG file(s)")
+
+    # Build graph
+    graph = build_graph_from_dags(dags)
+    click.echo(f"Built graph with {len(graph.nodes)} nodes and {len(graph.edges)} edges")
+
+    # Generate HTML
+    generate_html(graph, output)
+    click.echo(f"Generated: {output}")
+
+    if open_browser:
+        open_in_browser(output)
+        click.echo("Opened in browser")
 
 
 if __name__ == "__main__":

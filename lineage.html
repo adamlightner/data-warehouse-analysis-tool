@@ -1,0 +1,1412 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>DWAT - Data Lineage</title>
+    <script src="https://d3js.org/d3.v7.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/dagre/0.8.5/dagre.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/dagre-d3/0.6.4/dagre-d3.min.js"></script>
+    <style>
+        /* DWAT Lineage Visualization Styles */
+
+* {
+    box-sizing: border-box;
+}
+
+html, body {
+    margin: 0;
+    padding: 0;
+    width: 100%;
+    height: 100%;
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, sans-serif;
+    background: #f8fafc;
+    overflow: hidden;
+}
+
+/* Header */
+#header {
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    height: 60px;
+    background: #1e293b;
+    color: white;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 0 20px;
+    z-index: 1000;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
+}
+
+#header h1 {
+    margin: 0;
+    font-size: 1.25rem;
+    font-weight: 600;
+}
+
+#controls {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+}
+
+/* Search */
+#search-container {
+    position: relative;
+    display: flex;
+    align-items: center;
+    background: white;
+    border-radius: 6px;
+    padding: 6px 12px;
+    min-width: 250px;
+}
+
+.search-icon {
+    color: #64748b;
+    display: flex;
+    margin-right: 8px;
+}
+
+#search-input {
+    border: none;
+    outline: none;
+    font-size: 0.875rem;
+    flex: 1;
+    background: transparent;
+}
+
+.search-dropdown {
+    position: absolute;
+    top: 100%;
+    left: 0;
+    right: 0;
+    background: white;
+    border: 1px solid #e2e8f0;
+    border-radius: 6px;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+    max-height: 300px;
+    overflow-y: auto;
+    margin-top: 4px;
+    z-index: 1001;
+}
+
+.dropdown-item {
+    padding: 10px 12px;
+    cursor: pointer;
+    border-bottom: 1px solid #f1f5f9;
+    font-size: 0.875rem;
+}
+
+.dropdown-item:hover {
+    background: #f1f5f9;
+}
+
+.dropdown-item:last-child {
+    border-bottom: none;
+}
+
+.dropdown-item .node-type {
+    font-size: 0.75rem;
+    color: #64748b;
+    margin-left: 8px;
+}
+
+/* Filter */
+#filter-container {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    color: white;
+    font-size: 0.875rem;
+}
+
+#node-type-filter {
+    padding: 6px 10px;
+    border-radius: 6px;
+    border: none;
+    font-size: 0.875rem;
+    background: white;
+    cursor: pointer;
+}
+
+/* Toolbar */
+#toolbar {
+    position: fixed;
+    top: 70px;
+    left: 10px;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    z-index: 999;
+}
+
+#toolbar button {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 8px 12px;
+    background: white;
+    border: 1px solid #e2e8f0;
+    border-radius: 6px;
+    cursor: pointer;
+    font-size: 0.8rem;
+    color: #475569;
+    transition: all 0.2s;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+}
+
+#toolbar button:hover {
+    background: #f1f5f9;
+    border-color: #cbd5e1;
+}
+
+#toolbar button.active {
+    background: #3b82f6;
+    color: white;
+    border-color: #3b82f6;
+}
+
+/* Graph Container */
+#graph-container {
+    position: absolute;
+    top: 60px;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    overflow: hidden;
+}
+
+#graph-container svg {
+    width: 100%;
+    height: 100%;
+}
+
+/* Node Styles */
+.node {
+    cursor: pointer;
+    transition: opacity 0.3s;
+}
+
+.node rect {
+    stroke-width: 2px;
+    transition: all 0.3s;
+}
+
+.node text {
+    font-size: 12px;
+    font-weight: 500;
+    fill: #1e293b;
+    pointer-events: none;
+}
+
+.node.highlighted rect {
+    stroke: #f59e0b !important;
+    stroke-width: 3px;
+    filter: drop-shadow(0 0 8px rgba(245, 158, 11, 0.5));
+}
+
+.node.selected rect {
+    stroke: #3b82f6 !important;
+    stroke-width: 3px;
+    filter: drop-shadow(0 0 8px rgba(59, 130, 246, 0.5));
+}
+
+.node.dimmed {
+    opacity: 0.2;
+}
+
+.node.dragging {
+    cursor: grabbing;
+}
+
+/* Node Type Colors */
+.node.type-table rect { fill: #dbeafe; stroke: #3b82f6; }
+.node.type-task rect { fill: #dcfce7; stroke: #22c55e; }
+.node.type-dag rect { fill: #fef3c7; stroke: #f59e0b; }
+.node.type-source rect { fill: #f3e8ff; stroke: #a855f7; }
+.node.type-staging rect { fill: #e0e7ff; stroke: #6366f1; }
+.node.type-dimension rect { fill: #fce7f3; stroke: #ec4899; }
+.node.type-fact rect { fill: #ccfbf1; stroke: #14b8a6; }
+.node.type-default rect { fill: #f1f5f9; stroke: #64748b; }
+
+/* Edge Styles */
+.edge path {
+    fill: none;
+    stroke: #94a3b8;
+    stroke-width: 1.5px;
+    transition: all 0.3s;
+}
+
+.edge.highlighted path {
+    stroke: #f59e0b;
+    stroke-width: 2px;
+}
+
+.edge.dimmed {
+    opacity: 0.1;
+}
+
+.edge marker {
+    fill: #94a3b8;
+}
+
+.edge.highlighted marker {
+    fill: #f59e0b;
+}
+
+/* Info Panel */
+#info-panel {
+    position: fixed;
+    top: 70px;
+    right: 10px;
+    width: 320px;
+    background: white;
+    border-radius: 8px;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+    z-index: 999;
+    max-height: calc(100vh - 90px);
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+}
+
+#info-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 12px 16px;
+    border-bottom: 1px solid #e2e8f0;
+    background: #f8fafc;
+}
+
+#info-header h3 {
+    margin: 0;
+    font-size: 0.95rem;
+    font-weight: 600;
+    color: #1e293b;
+}
+
+#info-close {
+    background: none;
+    border: none;
+    font-size: 1.5rem;
+    cursor: pointer;
+    color: #64748b;
+    line-height: 1;
+    padding: 0;
+}
+
+#info-close:hover {
+    color: #1e293b;
+}
+
+#info-content {
+    padding: 16px;
+    overflow-y: auto;
+    flex: 1;
+}
+
+.info-section {
+    margin-bottom: 16px;
+}
+
+.info-section:last-child {
+    margin-bottom: 0;
+}
+
+.info-label {
+    font-size: 0.75rem;
+    font-weight: 600;
+    color: #64748b;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    margin-bottom: 4px;
+}
+
+.info-value {
+    font-size: 0.875rem;
+    color: #1e293b;
+    word-break: break-word;
+}
+
+.info-list {
+    list-style: none;
+    padding: 0;
+    margin: 0;
+}
+
+.info-list li {
+    padding: 4px 0;
+    font-size: 0.875rem;
+    color: #475569;
+}
+
+.info-list li:before {
+    content: '\2022';
+    color: #94a3b8;
+    margin-right: 8px;
+}
+
+/* Legend */
+#legend {
+    position: fixed;
+    bottom: 10px;
+    left: 10px;
+    background: white;
+    border-radius: 8px;
+    padding: 12px 16px;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+    z-index: 999;
+    max-width: 200px;
+}
+
+#legend h4 {
+    margin: 0 0 10px 0;
+    font-size: 0.8rem;
+    font-weight: 600;
+    color: #64748b;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+}
+
+#legend-items {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+}
+
+.legend-item {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 0.8rem;
+    color: #475569;
+}
+
+.legend-color {
+    width: 16px;
+    height: 16px;
+    border-radius: 3px;
+    border: 2px solid;
+}
+
+/* Utility */
+.hidden {
+    display: none !important;
+}
+
+/* Scrollbar */
+::-webkit-scrollbar {
+    width: 8px;
+    height: 8px;
+}
+
+::-webkit-scrollbar-track {
+    background: #f1f5f9;
+}
+
+::-webkit-scrollbar-thumb {
+    background: #cbd5e1;
+    border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+    background: #94a3b8;
+}
+
+    </style>
+</head>
+<body>
+    <div id="header">
+        <h1>DWAT Data Lineage</h1>
+        <div id="controls">
+            <div id="search-container">
+                <span class="search-icon">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>
+                </span>
+                <input type="text" id="search-input" placeholder="Search nodes...">
+                <div id="search-dropdown" class="search-dropdown hidden"></div>
+            </div>
+            <div id="filter-container">
+                <label for="node-type-filter">Filter by type:</label>
+                <select id="node-type-filter">
+                    <option value="all">All</option>
+                    <!-- Dynamic options populated by JS -->
+                </select>
+            </div>
+        </div>
+    </div>
+
+    <div id="toolbar">
+        <button id="reset-view" title="Reset view">
+            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 2v6h6"></path><path d="M3 13a9 9 0 1 0 3-7.7L3 8"></path></svg>
+            Reset
+        </button>
+        <button id="zoom-in" title="Zoom in">
+            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line><line x1="11" y1="8" x2="11" y2="14"></line><line x1="8" y1="11" x2="14" y2="11"></line></svg>
+        </button>
+        <button id="zoom-out" title="Zoom out">
+            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line><line x1="8" y1="11" x2="14" y2="11"></line></svg>
+        </button>
+        <button id="fit-view" title="Fit to view">
+            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M8 3H5a2 2 0 0 0-2 2v3m18 0V5a2 2 0 0 0-2-2h-3m0 18h3a2 2 0 0 0 2-2v-3M3 16v3a2 2 0 0 0 2 2h3"></path></svg>
+        </button>
+        <button id="show-upstream" title="Show upstream only">
+            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="19" x2="12" y2="5"></line><polyline points="5 12 12 5 19 12"></polyline></svg>
+            Upstream
+        </button>
+        <button id="show-downstream" title="Show downstream only">
+            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"></line><polyline points="19 12 12 19 5 12"></polyline></svg>
+            Downstream
+        </button>
+        <button id="show-all" title="Show all nodes">
+            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"></circle><line x1="2" y1="12" x2="22" y2="12"></line><line x1="12" y1="2" x2="12" y2="22"></line></svg>
+            Show All
+        </button>
+    </div>
+
+    <div id="graph-container"></div>
+
+    <div id="info-panel" class="hidden">
+        <div id="info-header">
+            <h3 id="info-title">Node Details</h3>
+            <button id="info-close">&times;</button>
+        </div>
+        <div id="info-content">
+            <!-- Populated dynamically -->
+        </div>
+    </div>
+
+    <div id="legend">
+        <h4>Legend</h4>
+        <div id="legend-items">
+            <!-- Populated dynamically based on node types -->
+        </div>
+    </div>
+
+    <script id="graph-data" type="application/json">
+        {
+  "nodes": [
+    {
+      "id": "dag:load_teams",
+      "label": "load_teams",
+      "type": "dag",
+      "source_file": "examples/definitions/teams.yml"
+    },
+    {
+      "id": "load_teams:get_batch",
+      "label": "get_batch",
+      "type": "task",
+      "dag": "load_teams",
+      "operator": "PythonOperator",
+      "source_file": "utils/get_batch.py"
+    },
+    {
+      "id": "load_teams:update_dim_table",
+      "label": "update_dim_table",
+      "type": "dimension",
+      "dag": "load_teams",
+      "operator": "SnowflakeOperator",
+      "source_file": "examples/sample_warehouse/sql_scripts/dimension/dim_team.sql",
+      "params": {
+        "TARGET_TABLE": "DIMENSION.NFL_TEAM",
+        "SOURCE_TABLE": "INGESTION.NFL_TEAM"
+      }
+    },
+    {
+      "id": "table:INGESTION.NFL_TEAM",
+      "label": "INGESTION.NFL_TEAM",
+      "type": "source"
+    },
+    {
+      "id": "table:DIMENSION.NFL_TEAM",
+      "label": "DIMENSION.NFL_TEAM",
+      "type": "dimension"
+    },
+    {
+      "id": "dag:load_games",
+      "label": "load_games",
+      "type": "dag",
+      "source_file": "examples/definitions/games.yml"
+    },
+    {
+      "id": "load_games:get_batch",
+      "label": "get_batch",
+      "type": "task",
+      "dag": "load_games",
+      "operator": "PythonOperator",
+      "source_file": "utils/get_batch.py"
+    },
+    {
+      "id": "load_games:insert_to_staing",
+      "label": "insert_to_staing",
+      "type": "staging",
+      "dag": "load_games",
+      "operator": "SnowflakeOperator",
+      "source_file": "examples/sample_warehouse/sql_scripts/staging/stg_game.sql",
+      "params": {
+        "TARGET_TABLE": "STAGING.NFL_GAME",
+        "SOURCE_TABLE": "INGESTION.NFL_GAME"
+      }
+    },
+    {
+      "id": "table:INGESTION.NFL_GAME",
+      "label": "INGESTION.NFL_GAME",
+      "type": "source"
+    },
+    {
+      "id": "table:STAGING.NFL_GAME",
+      "label": "STAGING.NFL_GAME",
+      "type": "staging"
+    },
+    {
+      "id": "load_games:insert_to_fact",
+      "label": "insert_to_fact",
+      "type": "fact",
+      "dag": "load_games",
+      "operator": "SnowflakeOperator",
+      "source_file": "examples/sample_warehouse/sql_scripts/fact/fct_game.sql",
+      "params": {
+        "TARGET_TABLE": "FACT.NFL_GAME",
+        "SOURCE_TABLE": "STAGING.NFL_GAME"
+      }
+    },
+    {
+      "id": "table:FACT.NFL_GAME",
+      "label": "FACT.NFL_GAME",
+      "type": "fact"
+    }
+  ],
+  "edges": [
+    {
+      "source": "dag:load_teams",
+      "target": "load_teams:get_batch"
+    },
+    {
+      "source": "dag:load_teams",
+      "target": "load_teams:update_dim_table"
+    },
+    {
+      "source": "load_teams:get_batch",
+      "target": "load_teams:update_dim_table"
+    },
+    {
+      "source": "table:INGESTION.NFL_TEAM",
+      "target": "load_teams:update_dim_table"
+    },
+    {
+      "source": "load_teams:update_dim_table",
+      "target": "table:DIMENSION.NFL_TEAM"
+    },
+    {
+      "source": "dag:load_games",
+      "target": "load_games:get_batch"
+    },
+    {
+      "source": "dag:load_games",
+      "target": "load_games:insert_to_staing"
+    },
+    {
+      "source": "load_games:get_batch",
+      "target": "load_games:insert_to_staing"
+    },
+    {
+      "source": "table:INGESTION.NFL_GAME",
+      "target": "load_games:insert_to_staing"
+    },
+    {
+      "source": "load_games:insert_to_staing",
+      "target": "table:STAGING.NFL_GAME"
+    },
+    {
+      "source": "dag:load_games",
+      "target": "load_games:insert_to_fact"
+    },
+    {
+      "source": "load_games:get_batch",
+      "target": "load_games:insert_to_fact"
+    },
+    {
+      "source": "table:STAGING.NFL_GAME",
+      "target": "load_games:insert_to_fact"
+    },
+    {
+      "source": "load_games:insert_to_fact",
+      "target": "table:FACT.NFL_GAME"
+    }
+  ]
+}
+    </script>
+
+    <script>
+        /**
+ * DWAT Lineage Visualization
+ * Interactive DAG visualization using D3.js and Dagre
+ */
+
+(function() {
+    'use strict';
+
+    // ============================================
+    // Configuration
+    // ============================================
+    const CONFIG = {
+        nodeWidth: 180,
+        nodeHeight: 40,
+        nodePadding: 20,
+        rankSep: 80,
+        nodeSep: 40,
+        edgeSep: 20,
+        zoomExtent: [0.1, 4],
+        transitionDuration: 500,
+        searchDebounce: 200
+    };
+
+    // Node type color mapping
+    const NODE_COLORS = {
+        table: { fill: '#dbeafe', stroke: '#3b82f6' },
+        task: { fill: '#dcfce7', stroke: '#22c55e' },
+        dag: { fill: '#fef3c7', stroke: '#f59e0b' },
+        source: { fill: '#f3e8ff', stroke: '#a855f7' },
+        staging: { fill: '#e0e7ff', stroke: '#6366f1' },
+        dimension: { fill: '#fce7f3', stroke: '#ec4899' },
+        fact: { fill: '#ccfbf1', stroke: '#14b8a6' },
+        default: { fill: '#f1f5f9', stroke: '#64748b' }
+    };
+
+    // ============================================
+    // State
+    // ============================================
+    let graphData = null;
+    let svg = null;
+    let g = null;
+    let zoom = null;
+    let selectedNode = null;
+    let visibleNodes = new Set();
+    let visibleEdges = new Set();
+
+    // ============================================
+    // Initialization
+    // ============================================
+    function init() {
+        // Load graph data
+        const dataElement = document.getElementById('graph-data');
+        if (!dataElement) {
+            console.error('No graph data element found');
+            return;
+        }
+
+        try {
+            graphData = JSON.parse(dataElement.textContent);
+        } catch (e) {
+            console.error('Failed to parse graph data:', e);
+            return;
+        }
+
+        // Initialize all nodes and edges as visible
+        graphData.nodes.forEach(n => visibleNodes.add(n.id));
+        graphData.edges.forEach((e, i) => visibleEdges.add(i));
+
+        // Setup visualization
+        setupSVG();
+        setupZoom();
+        setupControls();
+        setupSearch();
+        setupLegend();
+        render();
+        fitToView();
+    }
+
+    // ============================================
+    // SVG Setup
+    // ============================================
+    function setupSVG() {
+        const container = document.getElementById('graph-container');
+        const width = container.clientWidth;
+        const height = container.clientHeight;
+
+        svg = d3.select('#graph-container')
+            .append('svg')
+            .attr('width', width)
+            .attr('height', height);
+
+        // Arrow marker definition - smaller and sleeker
+        svg.append('defs')
+            .append('marker')
+            .attr('id', 'arrowhead')
+            .attr('viewBox', '-6 -3 6 6')
+            .attr('refX', 0)
+            .attr('refY', 0)
+            .attr('markerWidth', 5)
+            .attr('markerHeight', 5)
+            .attr('orient', 'auto')
+            .append('path')
+            .attr('d', 'M-6,-3L0,0L-6,3')
+            .attr('fill', '#94a3b8');
+
+        // Highlighted arrow marker
+        svg.select('defs')
+            .append('marker')
+            .attr('id', 'arrowhead-highlighted')
+            .attr('viewBox', '-6 -3 6 6')
+            .attr('refX', 0)
+            .attr('refY', 0)
+            .attr('markerWidth', 5)
+            .attr('markerHeight', 5)
+            .attr('orient', 'auto')
+            .append('path')
+            .attr('d', 'M-6,-3L0,0L-6,3')
+            .attr('fill', '#f59e0b');
+
+        g = svg.append('g').attr('class', 'graph');
+    }
+
+    // ============================================
+    // Zoom Setup
+    // ============================================
+    function setupZoom() {
+        zoom = d3.zoom()
+            .scaleExtent(CONFIG.zoomExtent)
+            .on('zoom', (event) => {
+                g.attr('transform', event.transform);
+            });
+
+        svg.call(zoom);
+    }
+
+    // ============================================
+    // Controls Setup
+    // ============================================
+    function setupControls() {
+        // Reset view
+        document.getElementById('reset-view').addEventListener('click', () => {
+            resetView();
+        });
+
+        // Zoom in
+        document.getElementById('zoom-in').addEventListener('click', () => {
+            svg.transition().duration(300).call(zoom.scaleBy, 1.3);
+        });
+
+        // Zoom out
+        document.getElementById('zoom-out').addEventListener('click', () => {
+            svg.transition().duration(300).call(zoom.scaleBy, 0.7);
+        });
+
+        // Fit to view
+        document.getElementById('fit-view').addEventListener('click', fitToView);
+
+        // Show upstream
+        document.getElementById('show-upstream').addEventListener('click', () => {
+            if (selectedNode) {
+                showLineage(selectedNode, 'upstream');
+            }
+        });
+
+        // Show downstream
+        document.getElementById('show-downstream').addEventListener('click', () => {
+            if (selectedNode) {
+                showLineage(selectedNode, 'downstream');
+            }
+        });
+
+        // Show all
+        document.getElementById('show-all').addEventListener('click', () => {
+            showAllNodes();
+        });
+
+        // Info panel close
+        document.getElementById('info-close').addEventListener('click', () => {
+            closeInfoPanel();
+        });
+
+        // Filter by type
+        document.getElementById('node-type-filter').addEventListener('change', (e) => {
+            filterByType(e.target.value);
+        });
+
+        // Window resize
+        window.addEventListener('resize', () => {
+            const container = document.getElementById('graph-container');
+            svg.attr('width', container.clientWidth)
+               .attr('height', container.clientHeight);
+        });
+    }
+
+    // ============================================
+    // Search Setup
+    // ============================================
+    function setupSearch() {
+        const input = document.getElementById('search-input');
+        const dropdown = document.getElementById('search-dropdown');
+        let debounceTimer = null;
+
+        input.addEventListener('input', (e) => {
+            clearTimeout(debounceTimer);
+            debounceTimer = setTimeout(() => {
+                const query = e.target.value.toLowerCase().trim();
+                if (query.length < 2) {
+                    dropdown.classList.add('hidden');
+                    return;
+                }
+
+                const matches = graphData.nodes.filter(n =>
+                    n.label.toLowerCase().includes(query) ||
+                    (n.type && n.type.toLowerCase().includes(query))
+                ).slice(0, 10);
+
+                if (matches.length === 0) {
+                    dropdown.classList.add('hidden');
+                    return;
+                }
+
+                dropdown.innerHTML = matches.map(n => `
+                    <div class="dropdown-item" data-id="${n.id}">
+                        ${n.label}
+                        <span class="node-type">${n.type || 'node'}</span>
+                    </div>
+                `).join('');
+                dropdown.classList.remove('hidden');
+
+                dropdown.querySelectorAll('.dropdown-item').forEach(item => {
+                    item.addEventListener('click', () => {
+                        const nodeId = item.dataset.id;
+                        selectNode(nodeId);
+                        centerOnNode(nodeId);
+                        dropdown.classList.add('hidden');
+                        input.value = '';
+                    });
+                });
+            }, CONFIG.searchDebounce);
+        });
+
+        // Close dropdown on outside click
+        document.addEventListener('click', (e) => {
+            if (!e.target.closest('#search-container')) {
+                dropdown.classList.add('hidden');
+            }
+        });
+    }
+
+    // ============================================
+    // Legend Setup
+    // ============================================
+    function setupLegend() {
+        const types = new Set(graphData.nodes.map(n => n.type || 'default'));
+        const legendItems = document.getElementById('legend-items');
+        const filterSelect = document.getElementById('node-type-filter');
+
+        legendItems.innerHTML = '';
+
+        types.forEach(type => {
+            const colors = NODE_COLORS[type] || NODE_COLORS.default;
+            legendItems.innerHTML += `
+                <div class="legend-item">
+                    <div class="legend-color" style="background: ${colors.fill}; border-color: ${colors.stroke};"></div>
+                    <span>${type}</span>
+                </div>
+            `;
+
+            // Add to filter dropdown
+            const option = document.createElement('option');
+            option.value = type;
+            option.textContent = type.charAt(0).toUpperCase() + type.slice(1);
+            filterSelect.appendChild(option);
+        });
+    }
+
+    // ============================================
+    // Graph Rendering
+    // ============================================
+    function render() {
+        // Create dagre graph
+        const dagreGraph = new dagre.graphlib.Graph();
+        dagreGraph.setGraph({
+            rankdir: 'LR',
+            ranksep: CONFIG.rankSep,
+            nodesep: CONFIG.nodeSep,
+            edgesep: CONFIG.edgeSep
+        });
+        dagreGraph.setDefaultEdgeLabel(() => ({}));
+
+        // Add visible nodes
+        graphData.nodes.filter(n => visibleNodes.has(n.id)).forEach(node => {
+            dagreGraph.setNode(node.id, {
+                label: node.label,
+                width: CONFIG.nodeWidth,
+                height: CONFIG.nodeHeight
+            });
+        });
+
+        // Add visible edges
+        graphData.edges.forEach((edge, i) => {
+            if (visibleEdges.has(i) && visibleNodes.has(edge.source) && visibleNodes.has(edge.target)) {
+                dagreGraph.setEdge(edge.source, edge.target);
+            }
+        });
+
+        // Calculate layout
+        dagre.layout(dagreGraph);
+
+        // Clear previous render
+        g.selectAll('*').remove();
+
+        // Render edges
+        const edgeGroup = g.append('g').attr('class', 'edges');
+        graphData.edges.forEach((edge, i) => {
+            if (!visibleEdges.has(i) || !visibleNodes.has(edge.source) || !visibleNodes.has(edge.target)) {
+                return;
+            }
+
+            const dagreEdge = dagreGraph.edge(edge.source, edge.target);
+            if (!dagreEdge) return;
+
+            const path = edgeGroup.append('g')
+                .attr('class', 'edge')
+                .attr('data-source', edge.source)
+                .attr('data-target', edge.target);
+
+            const line = d3.line()
+                .x(d => d.x)
+                .y(d => d.y)
+                .curve(d3.curveBasis);
+
+            path.append('path')
+                .attr('d', line(dagreEdge.points))
+                .attr('marker-end', 'url(#arrowhead)');
+        });
+
+        // Render nodes
+        const nodeGroup = g.append('g').attr('class', 'nodes');
+        graphData.nodes.filter(n => visibleNodes.has(n.id)).forEach(node => {
+            const dagreNode = dagreGraph.node(node.id);
+            if (!dagreNode) return;
+
+            const nodeType = node.type || 'default';
+            const nodeG = nodeGroup.append('g')
+                .attr('class', `node type-${nodeType}`)
+                .attr('data-id', node.id)
+                .attr('transform', `translate(${dagreNode.x - CONFIG.nodeWidth/2}, ${dagreNode.y - CONFIG.nodeHeight/2})`);
+
+            // Store position for later use
+            node.x = dagreNode.x;
+            node.y = dagreNode.y;
+
+            // Node rectangle
+            nodeG.append('rect')
+                .attr('width', CONFIG.nodeWidth)
+                .attr('height', CONFIG.nodeHeight)
+                .attr('rx', 6)
+                .attr('ry', 6);
+
+            // Node label
+            nodeG.append('text')
+                .attr('x', CONFIG.nodeWidth / 2)
+                .attr('y', CONFIG.nodeHeight / 2)
+                .attr('dy', '0.35em')
+                .attr('text-anchor', 'middle')
+                .text(truncateLabel(node.label, 20));
+
+            // Click handler
+            nodeG.on('click', () => {
+                selectNode(node.id);
+            });
+
+            // Drag behavior
+            const drag = d3.drag()
+                .on('start', function() {
+                    d3.select(this).classed('dragging', true);
+                })
+                .on('drag', function(event) {
+                    const newX = event.x - CONFIG.nodeWidth / 2;
+                    const newY = event.y - CONFIG.nodeHeight / 2;
+                    d3.select(this).attr('transform', `translate(${newX}, ${newY})`);
+                    node.x = event.x;
+                    node.y = event.y;
+                    updateEdgesForNode(node.id);
+                })
+                .on('end', function() {
+                    d3.select(this).classed('dragging', false);
+                });
+
+            nodeG.call(drag);
+        });
+    }
+
+    // ============================================
+    // Edge Update (for drag) - only updates edges for specific node
+    // ============================================
+    function updateEdgesForNode(nodeId) {
+        g.selectAll('.edge').each(function() {
+            const edge = d3.select(this);
+            const sourceId = edge.attr('data-source');
+            const targetId = edge.attr('data-target');
+
+            // Only update edges connected to the dragged node
+            if (sourceId !== nodeId && targetId !== nodeId) return;
+
+            const sourceNode = graphData.nodes.find(n => n.id === sourceId);
+            const targetNode = graphData.nodes.find(n => n.id === targetId);
+
+            if (sourceNode && targetNode && sourceNode.x && targetNode.x) {
+                updateEdgePath(edge, sourceNode, targetNode);
+            }
+        });
+    }
+
+    function updateEdgePath(edge, sourceNode, targetNode) {
+        const startX = sourceNode.x + CONFIG.nodeWidth / 2;
+        const startY = sourceNode.y;
+        const endX = targetNode.x - CONFIG.nodeWidth / 2;
+        const endY = targetNode.y;
+
+        // Horizontal offset for control points (creates smooth curve)
+        const cpOffset = Math.abs(endX - startX) * 0.4;
+
+        const points = [
+            { x: startX, y: startY },
+            { x: startX + cpOffset, y: startY },
+            { x: endX - cpOffset, y: endY },
+            { x: endX, y: endY }
+        ];
+
+        const line = d3.line()
+            .x(d => d.x)
+            .y(d => d.y)
+            .curve(d3.curveBasis);
+
+        edge.select('path').attr('d', line(points));
+    }
+
+    // ============================================
+    // Node Selection
+    // ============================================
+    function selectNode(nodeId) {
+        // Clear previous selection
+        g.selectAll('.node').classed('selected', false);
+
+        // Select new node
+        selectedNode = nodeId;
+        g.select(`.node[data-id="${CSS.escape(nodeId)}"]`).classed('selected', true);
+
+        // Show info panel
+        const node = graphData.nodes.find(n => n.id === nodeId);
+        if (node) {
+            showInfoPanel(node);
+        }
+
+        // Highlight lineage
+        highlightLineage(nodeId);
+    }
+
+    // ============================================
+    // Lineage Highlighting
+    // ============================================
+    function highlightLineage(nodeId) {
+        const upstream = getUpstream(nodeId);
+        const downstream = getDownstream(nodeId);
+        const lineage = new Set([nodeId, ...upstream, ...downstream]);
+
+        // Dim non-lineage nodes
+        g.selectAll('.node').each(function() {
+            const id = d3.select(this).attr('data-id');
+            d3.select(this).classed('dimmed', !lineage.has(id));
+        });
+
+        // Highlight lineage edges
+        g.selectAll('.edge').each(function() {
+            const source = d3.select(this).attr('data-source');
+            const target = d3.select(this).attr('data-target');
+            const isLineageEdge = lineage.has(source) && lineage.has(target);
+            d3.select(this).classed('dimmed', !isLineageEdge);
+            d3.select(this).classed('highlighted', isLineageEdge);
+            d3.select(this).select('path')
+                .attr('marker-end', isLineageEdge ? 'url(#arrowhead-highlighted)' : 'url(#arrowhead)');
+        });
+    }
+
+    function getUpstream(nodeId, visited = new Set()) {
+        if (visited.has(nodeId)) return [];
+        visited.add(nodeId);
+
+        const upstream = [];
+        graphData.edges.forEach(edge => {
+            if (edge.target === nodeId) {
+                upstream.push(edge.source);
+                upstream.push(...getUpstream(edge.source, visited));
+            }
+        });
+        return upstream;
+    }
+
+    function getDownstream(nodeId, visited = new Set()) {
+        if (visited.has(nodeId)) return [];
+        visited.add(nodeId);
+
+        const downstream = [];
+        graphData.edges.forEach(edge => {
+            if (edge.source === nodeId) {
+                downstream.push(edge.target);
+                downstream.push(...getDownstream(edge.target, visited));
+            }
+        });
+        return downstream;
+    }
+
+    // ============================================
+    // Show Lineage (filter view)
+    // ============================================
+    function showLineage(nodeId, direction) {
+        visibleNodes.clear();
+        visibleEdges.clear();
+
+        visibleNodes.add(nodeId);
+
+        if (direction === 'upstream' || direction === 'both') {
+            const upstream = getUpstream(nodeId);
+            upstream.forEach(id => visibleNodes.add(id));
+        }
+
+        if (direction === 'downstream' || direction === 'both') {
+            const downstream = getDownstream(nodeId);
+            downstream.forEach(id => visibleNodes.add(id));
+        }
+
+        // Add relevant edges
+        graphData.edges.forEach((edge, i) => {
+            if (visibleNodes.has(edge.source) && visibleNodes.has(edge.target)) {
+                visibleEdges.add(i);
+            }
+        });
+
+        render();
+        fitToView();
+    }
+
+    // ============================================
+    // Show All Nodes
+    // ============================================
+    function showAllNodes() {
+        graphData.nodes.forEach(n => visibleNodes.add(n.id));
+        graphData.edges.forEach((e, i) => visibleEdges.add(i));
+
+        selectedNode = null;
+        render();
+        fitToView();
+        closeInfoPanel();
+    }
+
+    // ============================================
+    // Filter by Type
+    // ============================================
+    function filterByType(type) {
+        visibleNodes.clear();
+        visibleEdges.clear();
+
+        if (type === 'all') {
+            graphData.nodes.forEach(n => visibleNodes.add(n.id));
+            graphData.edges.forEach((e, i) => visibleEdges.add(i));
+        } else {
+            graphData.nodes.forEach(n => {
+                if ((n.type || 'default') === type) {
+                    visibleNodes.add(n.id);
+                }
+            });
+
+            // Add edges between visible nodes
+            graphData.edges.forEach((edge, i) => {
+                if (visibleNodes.has(edge.source) && visibleNodes.has(edge.target)) {
+                    visibleEdges.add(i);
+                }
+            });
+        }
+
+        render();
+        fitToView();
+    }
+
+    // ============================================
+    // View Controls
+    // ============================================
+    function fitToView() {
+        const container = document.getElementById('graph-container');
+        const width = container.clientWidth;
+        const height = container.clientHeight;
+
+        const bounds = g.node().getBBox();
+        if (bounds.width === 0 || bounds.height === 0) return;
+
+        const padding = 50;
+        const scale = Math.min(
+            (width - padding * 2) / bounds.width,
+            (height - padding * 2) / bounds.height,
+            1
+        );
+
+        const translateX = (width - bounds.width * scale) / 2 - bounds.x * scale;
+        const translateY = (height - bounds.height * scale) / 2 - bounds.y * scale;
+
+        svg.transition()
+            .duration(CONFIG.transitionDuration)
+            .call(zoom.transform, d3.zoomIdentity.translate(translateX, translateY).scale(scale));
+    }
+
+    function centerOnNode(nodeId) {
+        const node = graphData.nodes.find(n => n.id === nodeId);
+        if (!node || !node.x) return;
+
+        const container = document.getElementById('graph-container');
+        const width = container.clientWidth;
+        const height = container.clientHeight;
+
+        const scale = 1;
+        const translateX = width / 2 - node.x * scale;
+        const translateY = height / 2 - node.y * scale;
+
+        svg.transition()
+            .duration(CONFIG.transitionDuration)
+            .call(zoom.transform, d3.zoomIdentity.translate(translateX, translateY).scale(scale));
+    }
+
+    function resetView() {
+        // Clear highlights
+        g.selectAll('.node').classed('dimmed', false).classed('selected', false).classed('highlighted', false);
+        g.selectAll('.edge').classed('dimmed', false).classed('highlighted', false);
+        g.selectAll('.edge path').attr('marker-end', 'url(#arrowhead)');
+
+        selectedNode = null;
+        closeInfoPanel();
+        fitToView();
+    }
+
+    // ============================================
+    // Info Panel
+    // ============================================
+    function showInfoPanel(node) {
+        const panel = document.getElementById('info-panel');
+        const title = document.getElementById('info-title');
+        const content = document.getElementById('info-content');
+
+        title.textContent = node.label;
+
+        // Build content
+        let html = '';
+
+        if (node.type) {
+            html += `
+                <div class="info-section">
+                    <div class="info-label">Type</div>
+                    <div class="info-value">${node.type}</div>
+                </div>
+            `;
+        }
+
+        if (node.dag) {
+            html += `
+                <div class="info-section">
+                    <div class="info-label">DAG</div>
+                    <div class="info-value">${node.dag}</div>
+                </div>
+            `;
+        }
+
+        if (node.operator) {
+            html += `
+                <div class="info-section">
+                    <div class="info-label">Operator</div>
+                    <div class="info-value">${node.operator}</div>
+                </div>
+            `;
+        }
+
+        if (node.source_file) {
+            html += `
+                <div class="info-section">
+                    <div class="info-label">Source File</div>
+                    <div class="info-value">${node.source_file}</div>
+                </div>
+            `;
+        }
+
+        if (node.params) {
+            html += `
+                <div class="info-section">
+                    <div class="info-label">Parameters</div>
+                    <div class="info-value"><pre>${JSON.stringify(node.params, null, 2)}</pre></div>
+                </div>
+            `;
+        }
+
+        // Show upstream/downstream counts
+        const upstream = getUpstream(node.id);
+        const downstream = getDownstream(node.id);
+
+        html += `
+            <div class="info-section">
+                <div class="info-label">Lineage</div>
+                <div class="info-value">
+                    ${upstream.length} upstream, ${downstream.length} downstream
+                </div>
+            </div>
+        `;
+
+        if (upstream.length > 0) {
+            html += `
+                <div class="info-section">
+                    <div class="info-label">Direct Parents</div>
+                    <ul class="info-list">
+                        ${graphData.edges
+                            .filter(e => e.target === node.id)
+                            .map(e => `<li>${graphData.nodes.find(n => n.id === e.source)?.label || e.source}</li>`)
+                            .join('')}
+                    </ul>
+                </div>
+            `;
+        }
+
+        if (downstream.length > 0) {
+            html += `
+                <div class="info-section">
+                    <div class="info-label">Direct Children</div>
+                    <ul class="info-list">
+                        ${graphData.edges
+                            .filter(e => e.source === node.id)
+                            .map(e => `<li>${graphData.nodes.find(n => n.id === e.target)?.label || e.target}</li>`)
+                            .join('')}
+                    </ul>
+                </div>
+            `;
+        }
+
+        content.innerHTML = html;
+        panel.classList.remove('hidden');
+    }
+
+    function closeInfoPanel() {
+        document.getElementById('info-panel').classList.add('hidden');
+    }
+
+    // ============================================
+    // Utilities
+    // ============================================
+    function truncateLabel(label, maxLength) {
+        if (label.length <= maxLength) return label;
+        return label.substring(0, maxLength - 3) + '...';
+    }
+
+    // ============================================
+    // Initialize on DOM ready
+    // ============================================
+    if (document.readyState === 'loading') {
+        document.addEventListener('DOMContentLoaded', init);
+    } else {
+        init();
+    }
+})();
+
+    </script>
+</body>
+</html>

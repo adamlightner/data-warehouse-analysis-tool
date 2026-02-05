@@ -17,11 +17,16 @@ load_games:
       params:
         TARGET_TABLE: STAGING.NFL_GAME
         SOURCE_TABLE: INGESTION.NFL_GAME
+      depends_on:
+        - get_batch 
 
     - id: insert_to_fact
       op_type: SnowflakeOperator
       pool: nfl
       source_file: examples/sample_warehouse/sql_scripts/fact/fct_game.sql
+      depends_on:
+        - get_batch
+        - insert_to_fact
       params:
         TARGET_TABLE: FACT.NFL_GAME
         SOURCE_TABLE: STAGING.NFL_GAME

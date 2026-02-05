@@ -14,6 +14,8 @@ load_teams:
       op_type: SnowflakeOperator
       pool: nfl
       source_file: examples/sample_warehouse/sql_scripts/dimension/dim_team.sql
+      depends_on:
+        - get_batch 
       params:
         TARGET_TABLE: DIMENSION.NFL_TEAM
         SOURCE_TABLE: INGESTION.NFL_TEAM
