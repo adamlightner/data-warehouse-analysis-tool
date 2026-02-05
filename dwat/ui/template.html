@@ -1,90 +1,408 @@
 <!DOCTYPE html>
+<!--
+    DOCTYPE Declaration
+    ===================
+    This tells the browser to use HTML5 standards mode.
+    Without it, browsers may render pages in "quirks mode" which
+    can cause inconsistent styling and behavior.
+-->
+
 <html lang="en">
+<!--
+    The lang="en" attribute:
+    - Helps screen readers pronounce content correctly
+    - Helps search engines understand the page language
+    - Used by browser translation features
+-->
+
 <head>
+    <!--
+        HEAD Section
+        ============
+        Contains metadata, styles, and scripts that load BEFORE the page renders.
+        Nothing here is visible on the page itself.
+    -->
+
     <meta charset="UTF-8">
+    <!--
+        Character Encoding
+        - UTF-8 supports virtually all characters from all languages
+        - Must be in the first 1024 bytes of the document
+        - Prevents garbled text (mojibake) for special characters
+    -->
+
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <!--
+        Viewport Meta Tag (Critical for mobile)
+        - width=device-width: Page width matches device screen width
+        - initial-scale=1.0: No zoom on initial load
+        - Without this, mobile browsers render pages at ~980px then shrink
+    -->
+
     <title>DWAT - Data Lineage</title>
+    <!--
+        Page Title
+        - Shows in browser tab
+        - Used as default bookmark name
+        - Important for SEO and accessibility
+    -->
+
+    <!--
+        External JavaScript Libraries (loaded from CDN)
+        ================================================
+        CDN = Content Delivery Network - servers distributed globally
+        that serve files quickly from locations near the user.
+
+        These load synchronously (blocking) - the page waits for each
+        to download before continuing. For production, consider:
+        - Adding 'async' or 'defer' attributes
+        - Bundling locally for offline use
+    -->
+
     <script src="https://d3js.org/d3.v7.min.js"></script>
+    <!--
+        D3.js (Data-Driven Documents) v7
+        - The core visualization library
+        - Binds data to DOM elements
+        - Handles SVG creation, transitions, scales, axes
+        - ~280KB minified
+        - Docs: https://d3js.org/
+    -->
+
     <script src="https://cdnjs.cloudflare.com/ajax/libs/dagre/0.8.5/dagre.min.js"></script>
+    <!--
+        Dagre - Directed Acyclic Graph layout engine
+        - Calculates optimal X,Y positions for nodes
+        - Minimizes edge crossings
+        - Respects hierarchy (parents above children)
+        - Used by many graph visualization tools
+        - ~280KB minified
+    -->
+
     <script src="https://cdnjs.cloudflare.com/ajax/libs/dagre-d3/0.6.4/dagre-d3.min.js"></script>
+    <!--
+        Dagre-D3 - Bridge between Dagre and D3
+        - Renders Dagre layouts using D3
+        - We mostly use Dagre directly + custom D3 rendering
+        - ~700KB minified (large because it includes its own D3 build)
+    -->
+
     <style>
+        /*
+            CSS_PLACEHOLDER
+            ===============
+            This placeholder gets replaced by Python (lineage.py) with
+            the contents of styles.css when generating the final HTML.
+
+            Why embed CSS instead of linking?
+            - Single self-contained file (no external dependencies)
+            - Works offline
+            - Easy to share/email
+            - Trade-off: Larger file, no browser caching across pages
+        */
         /* CSS_PLACEHOLDER */
     </style>
 </head>
+
 <body>
+    <!--
+        BODY Section
+        ============
+        Contains all visible content and UI elements.
+        Structured into logical sections:
+        1. Header (top bar with title and controls)
+        2. Toolbar (left side action buttons)
+        3. Graph Container (main visualization area)
+        4. Info Panel (right side details panel)
+        5. Legend (bottom left color key)
+        6. Data & Scripts (hidden, at bottom)
+    -->
+
+    <!-- ==================== HEADER ==================== -->
     <div id="header">
+        <!--
+            Fixed position header bar
+            Contains branding and user controls
+        -->
         <h1>DWAT Data Lineage</h1>
+
         <div id="controls">
+            <!--
+                Search Container
+                ================
+                Allows users to find nodes by name or type.
+                Uses a debounced input (waits for user to stop typing)
+                to avoid excessive filtering on every keystroke.
+            -->
             <div id="search-container">
                 <span class="search-icon">
+                    <!--
+                        Inline SVG Icon (Magnifying Glass)
+                        ==================================
+                        xmlns="http://www.w3.org/2000/svg"
+                        - This is a NAMESPACE declaration, not a URL to fetch
+                        - Required for inline SVG to render correctly
+                        - Tells the browser "this is SVG markup, not HTML"
+                        - The URL is just a unique identifier string
+
+                        viewBox="0 0 24 24"
+                        - Defines the coordinate system: 0,0 to 24,24
+                        - SVG content scales to fit width/height (16x16 here)
+                        - Allows icons to scale without losing quality
+
+                        stroke="currentColor"
+                        - Inherits text color from parent CSS
+                        - Makes icon color easy to change via CSS
+
+                        stroke-linecap="round" / stroke-linejoin="round"
+                        - Rounded ends and corners for softer appearance
+                    -->
                     <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>
                 </span>
                 <input type="text" id="search-input" placeholder="Search nodes...">
-                <div id="search-dropdown" class="search-dropdown hidden"></div>
+                <div id="search-dropdown" class="search-dropdown hidden">
+                    <!--
+                        Dropdown Results
+                        Populated dynamically by JS when user types.
+                        'hidden' class (display: none) hides it initially.
+                    -->
+                </div>
             </div>
+
+            <!--
+                Filter Dropdown
+                ===============
+                Filters visible nodes by type (dag, task, table, etc.)
+                Options are populated dynamically based on what node
+                types exist in the current graph data.
+            -->
             <div id="filter-container">
                 <label for="node-type-filter">Filter by type:</label>
                 <select id="node-type-filter">
                     <option value="all">All</option>
-                    <!-- Dynamic options populated by JS -->
+                    <!-- Additional options added by setupLegend() in JS -->
                 </select>
             </div>
         </div>
     </div>
 
+    <!-- ==================== TOOLBAR ==================== -->
     <div id="toolbar">
+        <!--
+            Vertical button bar on the left side.
+            Each button has:
+            - id: for JS event binding
+            - title: tooltip on hover
+            - SVG icon + optional text label
+        -->
+
         <button id="reset-view" title="Reset view">
+            <!-- Circular arrow icon (refresh/reset) -->
             <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 2v6h6"></path><path d="M3 13a9 9 0 1 0 3-7.7L3 8"></path></svg>
             Reset
         </button>
+
         <button id="zoom-in" title="Zoom in">
+            <!-- Magnifying glass with plus -->
             <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line><line x1="11" y1="8" x2="11" y2="14"></line><line x1="8" y1="11" x2="14" y2="11"></line></svg>
         </button>
+
         <button id="zoom-out" title="Zoom out">
+            <!-- Magnifying glass with minus -->
             <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line><line x1="8" y1="11" x2="14" y2="11"></line></svg>
         </button>
+
         <button id="fit-view" title="Fit to view">
+            <!-- Four corners icon (fit/expand) -->
             <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M8 3H5a2 2 0 0 0-2 2v3m18 0V5a2 2 0 0 0-2-2h-3m0 18h3a2 2 0 0 0 2-2v-3M3 16v3a2 2 0 0 0 2 2h3"></path></svg>
         </button>
+
         <button id="show-upstream" title="Show upstream only">
+            <!-- Arrow pointing up (upstream = data sources) -->
             <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="19" x2="12" y2="5"></line><polyline points="5 12 12 5 19 12"></polyline></svg>
             Upstream
         </button>
+
         <button id="show-downstream" title="Show downstream only">
+            <!-- Arrow pointing down (downstream = data consumers) -->
             <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"></line><polyline points="19 12 12 19 5 12"></polyline></svg>
             Downstream
         </button>
+
         <button id="show-all" title="Show all nodes">
+            <!-- Globe/circle icon (show everything) -->
             <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"></circle><line x1="2" y1="12" x2="22" y2="12"></line><line x1="12" y1="2" x2="12" y2="22"></line></svg>
             Show All
         </button>
     </div>
 
-    <div id="graph-container"></div>
+    <!-- ==================== GRAPH CONTAINER ==================== -->
+    <div id="graph-container">
+        <!--
+            Main Visualization Area
+            =======================
+            This div starts empty. D3.js creates an <svg> element inside it
+            during initialization (setupSVG function in visualization.js).
 
+            The SVG contains:
+            - <defs> for reusable elements (arrow markers)
+            - <g class="graph"> group that holds all nodes and edges
+              (this group is transformed for pan/zoom)
+
+            Structure after D3 initialization:
+            <svg>
+                <defs>
+                    <marker id="arrowhead">...</marker>
+                    <marker id="arrowhead-highlighted">...</marker>
+                </defs>
+                <g class="graph" transform="translate(x,y) scale(s)">
+                    <g class="edges">
+                        <g class="edge" data-source="..." data-target="...">
+                            <path d="..."></path>
+                        </g>
+                        ...
+                    </g>
+                    <g class="nodes">
+                        <g class="node type-task" data-id="...">
+                            <rect></rect>
+                            <text></text>
+                        </g>
+                        ...
+                    </g>
+                </g>
+            </svg>
+        -->
+    </div>
+
+    <!-- ==================== INFO PANEL ==================== -->
     <div id="info-panel" class="hidden">
+        <!--
+            Node Details Panel (right side)
+            ================================
+            Shows detailed information when a node is clicked.
+            Hidden by default ('hidden' class).
+
+            Content is populated dynamically by showInfoPanel() in JS.
+        -->
         <div id="info-header">
             <h3 id="info-title">Node Details</h3>
-            <button id="info-close">&times;</button>
+            <button id="info-close">
+                <!--
+                    &times; is HTML entity for multiplication sign (×)
+                    Commonly used as a close button icon
+                -->
+                &times;
+            </button>
         </div>
         <div id="info-content">
-            <!-- Populated dynamically -->
+            <!--
+                Populated by JS with sections like:
+                - Type (dag, task, table, etc.)
+                - DAG name
+                - Operator (PythonOperator, SnowflakeOperator)
+                - Source file path
+                - Parameters (TARGET_TABLE, SOURCE_TABLE)
+                - Lineage counts (upstream/downstream)
+                - Direct parents/children lists
+            -->
         </div>
     </div>
 
+    <!-- ==================== LEGEND ==================== -->
     <div id="legend">
+        <!--
+            Color Legend (bottom left)
+            ==========================
+            Shows what each node color means.
+            Populated dynamically based on node types in the graph.
+        -->
         <h4>Legend</h4>
         <div id="legend-items">
-            <!-- Populated dynamically based on node types -->
+            <!--
+                Populated by setupLegend() in JS with items like:
+                <div class="legend-item">
+                    <div class="legend-color" style="background: #dbeafe; border-color: #3b82f6;"></div>
+                    <span>table</span>
+                </div>
+            -->
         </div>
     </div>
 
+    <!-- ==================== DATA & SCRIPTS ==================== -->
+
     <script id="graph-data" type="application/json">
+        /*
+            GRAPH_DATA_PLACEHOLDER
+            ======================
+            This placeholder gets replaced by Python (lineage.py) with
+            the actual graph data as JSON when generating the final HTML.
+
+            type="application/json" tells the browser:
+            - Don't execute this as JavaScript
+            - Just store it as text content
+
+            The JS code retrieves it via:
+            document.getElementById('graph-data').textContent
+
+            Example data structure after replacement:
+            {
+                "nodes": [
+                    {
+                        "id": "dag:load_games",
+                        "label": "load_games",
+                        "type": "dag",
+                        "source_file": "examples/definitions/games.yml"
+                    },
+                    {
+                        "id": "load_games:get_batch",
+                        "label": "get_batch",
+                        "type": "task",
+                        "dag": "load_games",
+                        "operator": "PythonOperator"
+                    }
+                ],
+                "edges": [
+                    {"source": "dag:load_games", "target": "load_games:get_batch"},
+                    {"source": "load_games:get_batch", "target": "load_games:insert_to_staging"}
+                ]
+            }
+        */
         /* GRAPH_DATA_PLACEHOLDER */
     </script>
 
     <script>
+        /*
+            JS_PLACEHOLDER
+            ==============
+            This placeholder gets replaced by Python (lineage.py) with
+            the contents of visualization.js when generating the final HTML.
+
+            Why embed JS instead of linking?
+            - Same reasons as CSS: self-contained, offline, shareable
+
+            The visualization.js code:
+            1. Parses the graph data JSON
+            2. Sets up the SVG and zoom behavior
+            3. Uses Dagre to calculate node positions
+            4. Renders nodes and edges with D3
+            5. Handles user interactions (click, drag, search, filter)
+
+            See visualization.js for detailed code comments.
+        */
         /* JS_PLACEHOLDER */
     </script>
+
+    <!--
+        Script Placement
+        ================
+        Scripts are at the bottom of <body> because:
+        1. HTML elements above are parsed first (DOM ready)
+        2. Page appears to load faster (content visible sooner)
+        3. Scripts can reference DOM elements without waiting
+
+        Modern alternative: use 'defer' attribute on <script> tags
+        in <head> for same effect with cleaner organization.
+    -->
+
 </body>
 </html>
