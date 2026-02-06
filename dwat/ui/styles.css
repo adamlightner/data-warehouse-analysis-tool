@@ -43,6 +43,36 @@ html, body {
     gap: 16px;
 }
 
+/* View Mode Button Group */
+.button-group {
+    display: flex;
+    background: rgba(255, 255, 255, 0.1);
+    border-radius: 6px;
+    padding: 3px;
+}
+
+.button-group .toggle-btn {
+    padding: 6px 14px;
+    border: none;
+    background: transparent;
+    color: rgba(255, 255, 255, 0.7);
+    font-size: 0.8rem;
+    font-weight: 500;
+    cursor: pointer;
+    border-radius: 4px;
+    transition: all 0.2s;
+}
+
+.button-group .toggle-btn:hover {
+    color: white;
+    background: rgba(255, 255, 255, 0.1);
+}
+
+.button-group .toggle-btn.active {
+    background: white;
+    color: #1e293b;
+}
+
 /* Search */
 #search-container {
     position: relative;
@@ -212,14 +242,49 @@ html, body {
     cursor: grabbing;
 }
 
-/* Node Type Colors */
-.node.type-table rect { fill: #dbeafe; stroke: #3b82f6; }
-.node.type-task rect { fill: #dcfce7; stroke: #22c55e; }
+/* DAG Cluster Containers */
+.cluster {
+    cursor: pointer;
+}
+
+.cluster rect {
+    transition: all 0.3s;
+}
+
+.cluster:hover rect {
+    opacity: 0.7 !important;
+}
+
+.cluster.selected rect {
+    stroke-width: 3px;
+    filter: drop-shadow(0 0 8px rgba(245, 158, 11, 0.5));
+}
+
+.cluster.dimmed {
+    opacity: 0.2;
+}
+
+/* Node Type Colors - DAG (legacy, for non-clustered view) */
 .node.type-dag rect { fill: #fef3c7; stroke: #f59e0b; }
+
+/* Node Type Colors - Operators (DAG view) */
+.node.type-PythonOperator rect { fill: #dbeafe; stroke: #3b82f6; }
+.node.type-SnowflakeOperator rect { fill: #e0e7ff; stroke: #6366f1; }
+.node.type-BashOperator rect { fill: #dcfce7; stroke: #22c55e; }
+.node.type-PostgresOperator rect { fill: #f3e8ff; stroke: #a855f7; }
+.node.type-BigQueryOperator rect { fill: #fce7f3; stroke: #ec4899; }
+.node.type-SparkOperator rect { fill: #ffedd5; stroke: #f97316; }
+.node.type-EmailOperator rect { fill: #ccfbf1; stroke: #14b8a6; }
+
+/* Node Type Colors - Data Layers (Table view) */
 .node.type-source rect { fill: #f3e8ff; stroke: #a855f7; }
 .node.type-staging rect { fill: #e0e7ff; stroke: #6366f1; }
 .node.type-dimension rect { fill: #fce7f3; stroke: #ec4899; }
 .node.type-fact rect { fill: #ccfbf1; stroke: #14b8a6; }
+.node.type-table rect { fill: #dbeafe; stroke: #3b82f6; }
+
+/* Fallback */
+.node.type-task rect { fill: #dcfce7; stroke: #22c55e; }
 .node.type-default rect { fill: #f1f5f9; stroke: #64748b; }
 
 /* Edge Styles */

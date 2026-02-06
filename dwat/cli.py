@@ -5,7 +5,7 @@ from pathlib import Path
 
 from dwat.parsers.dag_parser import load_yamls, extract_tasks
 from dwat.parsers.query_parser import ParseQuery
-from dwat.lineage import build_graph_from_dags, generate_html, open_in_browser
+from dwat.lineage import generate_html_multi_view, open_in_browser
 
 @click.group()
 @click.version_option(version="0.1.0", prog_name="dwat")
@@ -33,9 +33,9 @@ def analyze(path: Path, recursive: bool):
 def dags(path: Path):
     """Load DAGs from YML files."""
     dags = load_yamls(path)
-    # click.echo(dags)
-    tasks = extract_tasks(dags)
-    click.echo(tasks)
+    click.echo(dags)
+    # tasks = extract_tasks(dags)
+    # click.echo(tasks)
 
 
 @main.command()
@@ -62,12 +62,8 @@ def lineage(path: Path, output: Path, open_browser: bool):
 
     click.echo(f"Found {len(dags)} DAG file(s)")
 
-    # Build graph
-    graph = build_graph_from_dags(dags)
-    click.echo(f"Built graph with {len(graph.nodes)} nodes and {len(graph.edges)} edges")
-
-    # Generate HTML
-    generate_html(graph, output)
+    # Generate HTML with all view modes
+    generate_html_multi_view(dags, output)
     click.echo(f"Generated: {output}")
 
     if open_browser:

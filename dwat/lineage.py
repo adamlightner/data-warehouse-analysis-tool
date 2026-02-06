@@ -64,16 +64,91 @@ class LineageGraph:
         return json.dumps(self.to_dict(), indent=indent)
 
 
-def build_graph_from_dags(dags: dict) -> LineageGraph:
+def build_graph_from_dags(dags: dict, view_mode: str = "dag") -> LineageGraph:
     """
     Build a lineage graph from DAG definitions.
 
     Args:
         dags: Dictionary mapping file paths to parsed YAML DAG definitions.
+        view_mode: "dag" for DAG/task view, "table" for table lineage view.
 
     Returns:
         LineageGraph containing all nodes and edges.
     """
+    if view_mode == "dag":
+        return _build_dag_view(dags)
+    else:
+        return _build_table_view(dags)
+
+
+def _build_dag_view(dags: dict) -> LineageGraph:
+    """Build DAG-centric view: DAGs -> Tasks (colored by operator type)."""
+    graph = LineageGraph()
+
+    for dag_file, dag_obj in dags.items():
+        if not dag_obj:
+            continue
+
+        dag_name = list(dag_obj.keys())[0]
+        dag_def = dag_obj[dag_name]
+
+        # Add DAG as a node
+        dag_node = Node(
+            id=f"dag:{dag_name}",
+            label=dag_name,
+            type="dag",
+            source_file=dag_file
+        )
+        graph.add_node(dag_node)
+
+        # Process tasks
+        tasks = dag_def.get("tasks", [])
+        if not tasks:
+            continue
+
+        for task in tasks:
+            task_id = task.get("id")
+            if not task_id:
+                continue
+
+            # Use op_type as the node type for coloring
+            op_type = task.get("op_type", "task")
+
+            # Create task node
+            task_node = Node(
+                id=f"{dag_name}:{task_id}",
+                label=task_id,
+                type=op_type,
+                dag=dag_name,
+                operator=op_type,
+                source_file=task.get("source_file"),
+                params=task.get("params")
+            )
+            graph.add_node(task_node)
+
+            # Add edge from DAG to first task (tasks with no dependencies)
+            depends_on = task.get("depends_on", [])
+            if not depends_on:
+                graph.add_edge(Edge(
+                    source=f"dag:{dag_name}",
+                    target=f"{dag_name}:{task_id}"
+                ))
+
+            # Add edges for task dependencies (depends_on creates lineage)
+            for dep in depends_on:
+                # Skip self-referential dependencies
+                if dep == task_id:
+                    continue
+                graph.add_edge(Edge(
+                    source=f"{dag_name}:{dep}",
+                    target=f"{dag_name}:{task_id}"
+                ))
+
+    return graph
+
+
+def _build_table_view(dags: dict) -> LineageGraph:
+    """Build table-centric view: Tables -> Tasks -> Tables (colored by data layer)."""
     graph = LineageGraph()
 
     for dag_file, dag_obj in dags.items():
@@ -126,7 +201,6 @@ def build_graph_from_dags(dags: dict) -> LineageGraph:
             # Add edges for task dependencies
             depends_on = task.get("depends_on", [])
             for dep in depends_on:
-                # Skip self-referential dependencies (bug in sample data)
                 if dep == task_id:
                     continue
                 graph.add_edge(Edge(
@@ -214,9 +288,63 @@ def _infer_table_type(table_name: str) -> str:
         return "table"
 
 
+def generate_html_multi_view(dags: dict, output_path: Optional[Path] = None) -> str:
+    """
+    Generate interactive HTML visualization with multiple view modes.
+
+    Args:
+        dags: Raw DAG definitions dictionary.
+        output_path: Optional path to write the HTML file.
+
+    Returns:
+        The generated HTML string.
+    """
+    # Build graphs for each view mode
+    dag_graph = build_graph_from_dags(dags, view_mode="dag")
+    table_graph = build_graph_from_dags(dags, view_mode="table")
+
+    # Combine into multi-view data structure
+    all_graphs = {
+        "dag": dag_graph.to_dict(),
+        "table": table_graph.to_dict(),
+        "metric": table_graph.to_dict()  # Placeholder: same as table for now
+    }
+
+    # Load template files
+    ui_dir = Path(__file__).parent / "ui"
+    template_path = ui_dir / "template.html"
+    styles_path = ui_dir / "styles.css"
+    js_path = ui_dir / "visualization.js"
+
+    with open(template_path) as f:
+        html = f.read()
+
+    with open(styles_path) as f:
+        css = f.read()
+
+    with open(js_path) as f:
+        js = f.read()
+
+    # Replace placeholders
+    html = html.replace("/* CSS_PLACEHOLDER */", css)
+    html = html.replace("/* GRAPH_DATA_PLACEHOLDER */", json.dumps(all_graphs, indent=2))
+    html = html.replace("/* JS_PLACEHOLDER */", js)
+
+    # Write to file if path provided
+    if output_path:
+        output_path = Path(output_path)
+        output_path.parent.mkdir(parents=True, exist_ok=True)
+        with open(output_path, "w") as f:
+            f.write(html)
+
+    return html
+
+
 def generate_html(graph: LineageGraph, output_path: Optional[Path] = None) -> str:
     """
     Generate interactive HTML visualization from a lineage graph.
+
+    DEPRECATED: Use generate_html_multi_view for new code.
 
     Args:
         graph: The LineageGraph to visualize.
@@ -240,9 +368,16 @@ def generate_html(graph: LineageGraph, output_path: Optional[Path] = None) -> st
     with open(js_path) as f:
         js = f.read()
 
+    # Wrap single graph in multi-view format for compatibility
+    all_graphs = {
+        "dag": graph.to_dict(),
+        "table": graph.to_dict(),
+        "metric": graph.to_dict()
+    }
+
     # Replace placeholders
     html = html.replace("/* CSS_PLACEHOLDER */", css)
-    html = html.replace("/* GRAPH_DATA_PLACEHOLDER */", graph.to_json())
+    html = html.replace("/* GRAPH_DATA_PLACEHOLDER */", json.dumps(all_graphs, indent=2))
     html = html.replace("/* JS_PLACEHOLDER */", js)
 
     # Write to file if path provided

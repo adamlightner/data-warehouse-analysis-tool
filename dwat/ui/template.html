@@ -128,6 +128,20 @@
 
         <div id="controls">
             <!--
+                View Mode Toggle
+                ================
+                Button group to switch between different lineage views:
+                - DAG: Shows Airflow DAGs → Tasks → Dependencies
+                - Table: Shows Source tables → Transformations → Target tables
+                - Metric: Shows metric definitions and their dependencies
+            -->
+            <div id="view-mode-toggle" class="button-group">
+                <button class="toggle-btn active" data-mode="dag">DAG</button>
+                <button class="toggle-btn" data-mode="table">Table</button>
+                <button class="toggle-btn" data-mode="metric">Metric</button>
+            </div>
+
+            <!--
                 Search Container
                 ================
                 Allows users to find nodes by name or type.
@@ -330,67 +344,25 @@
 
     <!-- ==================== DATA & SCRIPTS ==================== -->
 
-    <script id="graph-data" type="application/json">
-        /*
-            GRAPH_DATA_PLACEHOLDER
-            ======================
-            This placeholder gets replaced by Python (lineage.py) with
-            the actual graph data as JSON when generating the final HTML.
+    <!--
+        GRAPH DATA
+        ==========
+        This script tag holds the graph data as JSON.
+        The placeholder gets replaced by Python (lineage.py) with actual data.
 
-            type="application/json" tells the browser:
-            - Don't execute this as JavaScript
-            - Just store it as text content
+        type="application/json" tells the browser not to execute it.
+        The JS retrieves it via: document.getElementById('graph-data').textContent
+    -->
+    <script id="graph-data" type="application/json">/* GRAPH_DATA_PLACEHOLDER */</script>
 
-            The JS code retrieves it via:
-            document.getElementById('graph-data').textContent
-
-            Example data structure after replacement:
-            {
-                "nodes": [
-                    {
-                        "id": "dag:load_games",
-                        "label": "load_games",
-                        "type": "dag",
-                        "source_file": "examples/definitions/games.yml"
-                    },
-                    {
-                        "id": "load_games:get_batch",
-                        "label": "get_batch",
-                        "type": "task",
-                        "dag": "load_games",
-                        "operator": "PythonOperator"
-                    }
-                ],
-                "edges": [
-                    {"source": "dag:load_games", "target": "load_games:get_batch"},
-                    {"source": "load_games:get_batch", "target": "load_games:insert_to_staging"}
-                ]
-            }
-        */
-        /* GRAPH_DATA_PLACEHOLDER */
-    </script>
-
-    <script>
-        /*
-            JS_PLACEHOLDER
-            ==============
-            This placeholder gets replaced by Python (lineage.py) with
-            the contents of visualization.js when generating the final HTML.
-
-            Why embed JS instead of linking?
-            - Same reasons as CSS: self-contained, offline, shareable
-
-            The visualization.js code:
-            1. Parses the graph data JSON
-            2. Sets up the SVG and zoom behavior
-            3. Uses Dagre to calculate node positions
-            4. Renders nodes and edges with D3
-            5. Handles user interactions (click, drag, search, filter)
-
-            See visualization.js for detailed code comments.
-        */
-        /* JS_PLACEHOLDER */
-    </script>
+    <!--
+        VISUALIZATION JS
+        ================
+        This placeholder gets replaced by Python (lineage.py) with
+        the contents of visualization.js when generating the final HTML.
+        See visualization.js for detailed code comments.
+    -->
+    <script>/* JS_PLACEHOLDER */</script>
 
     <!--
         Script Placement

@@ -23,26 +23,39 @@
 
     // Node type color mapping
     const NODE_COLORS = {
-        table: { fill: '#dbeafe', stroke: '#3b82f6' },
-        task: { fill: '#dcfce7', stroke: '#22c55e' },
+        // DAG container
         dag: { fill: '#fef3c7', stroke: '#f59e0b' },
+        // Operator types (DAG view)
+        PythonOperator: { fill: '#dbeafe', stroke: '#3b82f6' },
+        SnowflakeOperator: { fill: '#e0e7ff', stroke: '#6366f1' },
+        BashOperator: { fill: '#dcfce7', stroke: '#22c55e' },
+        PostgresOperator: { fill: '#f3e8ff', stroke: '#a855f7' },
+        BigQueryOperator: { fill: '#fce7f3', stroke: '#ec4899' },
+        SparkOperator: { fill: '#ffedd5', stroke: '#f97316' },
+        EmailOperator: { fill: '#ccfbf1', stroke: '#14b8a6' },
+        // Data layer types (Table view)
         source: { fill: '#f3e8ff', stroke: '#a855f7' },
         staging: { fill: '#e0e7ff', stroke: '#6366f1' },
         dimension: { fill: '#fce7f3', stroke: '#ec4899' },
         fact: { fill: '#ccfbf1', stroke: '#14b8a6' },
+        table: { fill: '#dbeafe', stroke: '#3b82f6' },
+        // Fallbacks
+        task: { fill: '#dcfce7', stroke: '#22c55e' },
         default: { fill: '#f1f5f9', stroke: '#64748b' }
     };
 
     // ============================================
     // State
     // ============================================
-    let graphData = null;
+    let allGraphs = null;      // All view mode graphs { dag: {...}, table: {...}, metric: {...} }
+    let graphData = null;      // Current active graph
     let svg = null;
     let g = null;
     let zoom = null;
     let selectedNode = null;
     let visibleNodes = new Set();
     let visibleEdges = new Set();
+    let currentViewMode = 'dag';
 
     // ============================================
     // Initialization
@@ -56,15 +69,14 @@
         }
 
         try {
-            graphData = JSON.parse(dataElement.textContent);
+            allGraphs = JSON.parse(dataElement.textContent);
         } catch (e) {
             console.error('Failed to parse graph data:', e);
             return;
         }
 
-        // Initialize all nodes and edges as visible
-        graphData.nodes.forEach(n => visibleNodes.add(n.id));
-        graphData.edges.forEach((e, i) => visibleEdges.add(i));
+        // Set initial view mode
+        switchViewMode('dag');
 
         // Setup visualization
         setupSVG();
@@ -74,6 +86,23 @@
         setupLegend();
         render();
         fitToView();
+    }
+
+    // ============================================
+    // Switch View Mode
+    // ============================================
+    function switchViewMode(mode) {
+        currentViewMode = mode;
+        graphData = allGraphs[mode] || allGraphs.dag;
+
+        // Reset visibility sets
+        visibleNodes.clear();
+        visibleEdges.clear();
+        graphData.nodes.forEach(n => visibleNodes.add(n.id));
+        graphData.edges.forEach((_, i) => visibleEdges.add(i));
+
+        // Clear selection
+        selectedNode = null;
     }
 
     // ============================================
@@ -184,6 +213,9 @@
             filterByType(e.target.value);
         });
 
+        // View mode toggle
+        setupViewModeToggle();
+
         // Window resize
         window.addEventListener('resize', () => {
             const container = document.getElementById('graph-container');
@@ -275,11 +307,36 @@
     }
 
     // ============================================
+    // View Mode Toggle
+    // ============================================
+    function setupViewModeToggle() {
+        const toggleButtons = document.querySelectorAll('#view-mode-toggle .toggle-btn');
+
+        toggleButtons.forEach(btn => {
+            btn.addEventListener('click', () => {
+                // Update active state
+                toggleButtons.forEach(b => b.classList.remove('active'));
+                btn.classList.add('active');
+
+                // Switch to new view mode
+                const mode = btn.dataset.mode;
+                switchViewMode(mode);
+
+                // Re-render and update UI
+                render();
+                setupLegend();
+                fitToView();
+                closeInfoPanel();
+            });
+        });
+    }
+
+    // ============================================
     // Graph Rendering
     // ============================================
     function render() {
-        // Create dagre graph
-        const dagreGraph = new dagre.graphlib.Graph();
+        // Create dagre graph with compound node support
+        const dagreGraph = new dagre.graphlib.Graph({ compound: true });
         dagreGraph.setGraph({
             rankdir: 'LR',
             ranksep: CONFIG.rankSep,
@@ -288,20 +345,48 @@
         });
         dagreGraph.setDefaultEdgeLabel(() => ({}));
 
-        // Add visible nodes
-        graphData.nodes.filter(n => visibleNodes.has(n.id)).forEach(node => {
+        // Separate DAG nodes (clusters) from regular nodes
+        const dagNodes = graphData.nodes.filter(n => n.type === 'dag' && visibleNodes.has(n.id));
+        const taskNodes = graphData.nodes.filter(n => n.type !== 'dag' && visibleNodes.has(n.id));
+
+        // Add DAG nodes as clusters
+        dagNodes.forEach(dag => {
+            dagreGraph.setNode(dag.id, {
+                label: dag.label,
+                clusterLabelPos: 'top',
+                style: 'fill: #fef3c7; stroke: #f59e0b;',
+                paddingTop: 30,
+                paddingBottom: 15,
+                paddingLeft: 15,
+                paddingRight: 15
+            });
+        });
+
+        // Add task nodes and set their parent DAG
+        taskNodes.forEach(node => {
             dagreGraph.setNode(node.id, {
                 label: node.label,
                 width: CONFIG.nodeWidth,
                 height: CONFIG.nodeHeight
             });
+
+            // Set parent to DAG if this task belongs to a DAG
+            if (node.dag) {
+                const dagId = `dag:${node.dag}`;
+                if (dagreGraph.hasNode(dagId)) {
+                    dagreGraph.setParent(node.id, dagId);
+                }
+            }
         });
 
-        // Add visible edges
+        // Add visible edges (only between tasks, not from DAG to task)
         graphData.edges.forEach((edge, i) => {
-            if (visibleEdges.has(i) && visibleNodes.has(edge.source) && visibleNodes.has(edge.target)) {
-                dagreGraph.setEdge(edge.source, edge.target);
-            }
+            if (!visibleEdges.has(i)) return;
+            if (!visibleNodes.has(edge.source) || !visibleNodes.has(edge.target)) return;
+            // Skip edges from DAG to task (containment is shown by clustering)
+            if (edge.source.startsWith('dag:')) return;
+
+            dagreGraph.setEdge(edge.source, edge.target);
         });
 
         // Calculate layout
@@ -310,12 +395,54 @@
         // Clear previous render
         g.selectAll('*').remove();
 
+        // Render DAG clusters (containers) first (background)
+        const clusterGroup = g.append('g').attr('class', 'clusters');
+        dagNodes.forEach(dag => {
+            const dagreNode = dagreGraph.node(dag.id);
+            if (!dagreNode) return;
+
+            const clusterG = clusterGroup.append('g')
+                .attr('class', 'cluster type-dag')
+                .attr('data-id', dag.id)
+                .attr('transform', `translate(${dagreNode.x - dagreNode.width/2}, ${dagreNode.y - dagreNode.height/2})`);
+
+            // Store position
+            dag.x = dagreNode.x;
+            dag.y = dagreNode.y;
+
+            // Cluster background rectangle
+            clusterG.append('rect')
+                .attr('width', dagreNode.width)
+                .attr('height', dagreNode.height)
+                .attr('rx', 8)
+                .attr('ry', 8)
+                .attr('fill', '#fef3c7')
+                .attr('stroke', '#f59e0b')
+                .attr('stroke-width', 2)
+                .attr('opacity', 0.5);
+
+            // Cluster label at top
+            clusterG.append('text')
+                .attr('x', dagreNode.width / 2)
+                .attr('y', 20)
+                .attr('text-anchor', 'middle')
+                .attr('font-weight', '600')
+                .attr('font-size', '14px')
+                .attr('fill', '#92400e')
+                .text(dag.label);
+
+            // Click handler for cluster
+            clusterG.on('click', () => selectNode(dag.id));
+        });
+
         // Render edges
         const edgeGroup = g.append('g').attr('class', 'edges');
         graphData.edges.forEach((edge, i) => {
             if (!visibleEdges.has(i) || !visibleNodes.has(edge.source) || !visibleNodes.has(edge.target)) {
                 return;
             }
+            // Skip DAG->task edges (shown by containment)
+            if (edge.source.startsWith('dag:')) return;
 
             const dagreEdge = dagreGraph.edge(edge.source, edge.target);
             if (!dagreEdge) return;
@@ -335,9 +462,9 @@
                 .attr('marker-end', 'url(#arrowhead)');
         });
 
-        // Render nodes
+        // Render task nodes (on top of clusters)
         const nodeGroup = g.append('g').attr('class', 'nodes');
-        graphData.nodes.filter(n => visibleNodes.has(n.id)).forEach(node => {
+        taskNodes.forEach(node => {
             const dagreNode = dagreGraph.node(node.id);
             if (!dagreNode) return;
 

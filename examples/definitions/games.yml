@@ -26,7 +26,7 @@ load_games:
       source_file: examples/sample_warehouse/sql_scripts/fact/fct_game.sql
       depends_on:
         - get_batch
-        - insert_to_fact
+        - insert_to_staing
       params:
         TARGET_TABLE: FACT.NFL_GAME
         SOURCE_TABLE: STAGING.NFL_GAME

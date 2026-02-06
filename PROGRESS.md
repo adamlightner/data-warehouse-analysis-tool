@@ -63,11 +63,26 @@ data_warehouse_analysis_tool/
 - [x] Added detailed comments to template.html for learning
 - [x] Updated README with workflow documentation (input/output at each step)
 
+### Session 3 - Multi-View Toggle & DAG Containers (2025-02-06)
+- [x] Added view mode toggle button group (DAG, Table, Metric)
+- [x] Implemented multi-view graph generation
+  - [x] DAG view: Tasks colored by `op_type` (PythonOperator, SnowflakeOperator, etc.)
+  - [x] Table view: Original graph with data layer colors (source, staging, fact, etc.)
+  - [x] Metric view: Placeholder (same as Table for now)
+- [x] DAG nodes now render as container boxes (compound/cluster nodes)
+  - [x] Tasks visually grouped inside their parent DAG
+  - [x] Lineage arrows between tasks based on `depends_on`
+  - [x] DAG label at top of container
+- [x] Updated `lineage.py` with `_build_dag_view()` and `_build_table_view()` functions
+- [x] Added `generate_html_multi_view()` for embedding all view graphs
+- [x] Fixed template.html placeholder issue (comments breaking JSON parsing)
+- [x] Added CSS styles for operator types and cluster containers
+
 ---
 
 ## Current Status
 
-**Phase:** DAG Lineage MVP Complete
+**Phase:** Multi-View Lineage UI Complete
 
 **Working CLI Commands:**
 ```bash
@@ -81,7 +96,8 @@ dwat lineage <path> -o out.html --open  # Generate and open in browser
 **Current Capabilities:**
 - Parse Airflow-style YAML DAG definitions
 - Extract tasks, dependencies, operators, parameters
-- Build directed graph of DAG → Task → Table relationships
+- Multi-view toggle: DAG view (operator-based), Table view (data layer-based), Metric view (placeholder)
+- DAG view shows tasks inside DAG container boxes with `depends_on` lineage
 - Generate self-contained interactive HTML visualization
 
 ---
@@ -92,16 +108,19 @@ dwat lineage <path> -o out.html --open  # Generate and open in browser
 
 The tool should support three distinct lineage perspectives:
 
-#### 1. DAG Lineage (Current - MVP Complete)
-**What it shows:** Airflow DAGs → Tasks → Dependencies
+#### 1. DAG Lineage (Current - Complete)
+**What it shows:** DAG containers with tasks inside, colored by operator type
 **Data source:** YAML DAG definition files
 **Use case:** Understanding orchestration flow, task dependencies
 
 ```
-┌─────────┐     ┌───────────┐     ┌─────────────┐
-│   DAG   │ ──▶ │   Task    │ ──▶ │    Task     │
-│load_game│     │ get_batch │     │insert_to_stg│
-└─────────┘     └───────────┘     └─────────────┘
+┌─────────────────────────────────────────────────┐
+│  load_games (DAG)                               │
+│  ┌─────────────┐      ┌─────────────────────┐   │
+│  │  get_batch  │ ───▶ │  insert_to_staging  │   │
+│  │  (Python)   │      │    (Snowflake)      │   │
+│  └─────────────┘      └─────────────────────┘   │
+└─────────────────────────────────────────────────┘
 ```
 
 **Status:** ✅ Complete
@@ -162,12 +181,12 @@ The tool should support three distinct lineage perspectives:
 
 ### Implementation Order
 
-| Priority | Feature | Complexity | Value |
-|----------|---------|------------|-------|
-| 1 | Table Lineage | Medium | High - Most requested feature |
-| 2 | Column Lineage | High | High - Compliance/debugging |
-| 3 | Combined View | Medium | Medium - Toggle between views |
-| 4 | Export Options | Low | Medium - JSON, Mermaid, etc. |
+| Priority | Feature | Complexity | Value | Status |
+|----------|---------|------------|-------|--------|
+| 1 | Table Lineage (SQL parsing) | Medium | High - Most requested feature | Todo |
+| 2 | Column Lineage | High | High - Compliance/debugging | Todo |
+| 3 | Combined View (UI toggle) | Medium | Medium - Toggle between views | ✅ Done |
+| 4 | Export Options | Low | Medium - JSON, Mermaid, etc. | Todo |
 
 ---
 
@@ -280,9 +299,8 @@ dwat serve examples/ --port 8000
    - Option B: Parse as-is, show as placeholder nodes
    - Option C: Regex replace before parsing
 
-3. **Visualization Mode:** Single view that toggles, or separate commands?
-   - `dwat lineage --mode dag|table|column`
-   - vs. `dwat dag-lineage`, `dwat table-lineage`, `dwat column-lineage`
+3. ~~**Visualization Mode:** Single view that toggles, or separate commands?~~
+   - ✅ **Resolved:** Using in-UI toggle buttons (DAG, Table, Metric)
 
 4. **Incremental Parsing:** For large warehouses, parse all SQL upfront or on-demand?
 
