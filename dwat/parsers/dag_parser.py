@@ -1,17 +1,20 @@
 import yaml
 from pathlib import Path
 
-def load_yamls(path: Path) -> dict:
+def load_dag(file_name: Path) -> dict:
+    """Load YAML file."""
+    with open(file_name) as f: 
+        return yaml.safe_load(f)
+
+def load_dags(dir_name: Path) -> dict:
     """Load YAML files."""
     dags = {}
 
-    for path in path.rglob("*.yml"):
-        with open(path) as f: 
-            dags[str(path)] = yaml.safe_load(f)
+    for f in dir_name.rglob("*.yml"):
+        dags[str(f)] = load_dag(f)
         
-    for path in path.rglob("*.yaml"):
-        with open(path) as f: 
-            dags[str(path)] = yaml.safe_load(f)
+    for f in dir_name.rglob("*.yaml"):
+        dags[str(f)] = load_dag(f)
 
     return dags
 

@@ -256,8 +256,10 @@ html, body {
 }
 
 .cluster.selected rect {
-    stroke-width: 3px;
-    filter: drop-shadow(0 0 8px rgba(245, 158, 11, 0.5));
+    stroke: #3b82f6 !important;
+    stroke-width: 2.5px;
+    stroke-dasharray: 6 4;
+    filter: drop-shadow(0 0 8px rgba(59, 130, 246, 0.4));
 }
 
 .cluster.dimmed {
@@ -265,7 +267,7 @@ html, body {
 }
 
 /* Node Type Colors - DAG (legacy, for non-clustered view) */
-.node.type-dag rect { fill: #fef3c7; stroke: #f59e0b; }
+.node.type-dag rect { fill: #f1f5f9; stroke: #94a3b8; }
 
 /* Node Type Colors - Operators (DAG view) */
 .node.type-PythonOperator rect { fill: #dbeafe; stroke: #3b82f6; }

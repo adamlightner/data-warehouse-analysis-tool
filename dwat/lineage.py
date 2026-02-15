@@ -41,6 +41,7 @@ class LineageGraph:
     nodes: list[Node] = field(default_factory=list)
     edges: list[Edge] = field(default_factory=list)
     _node_ids: set = field(default_factory=set, repr=False)
+    _edge_keys: set = field(default_factory=set, repr=False)
 
     def add_node(self, node: Node) -> None:
         """Add a node to the graph if it doesn't exist."""
@@ -49,8 +50,11 @@ class LineageGraph:
             self._node_ids.add(node.id)
 
     def add_edge(self, edge: Edge) -> None:
-        """Add an edge to the graph."""
-        self.edges.append(edge)
+        """Add an edge to the graph if it doesn't exist."""
+        key = (edge.source, edge.target)
+        if key not in self._edge_keys:
+            self.edges.append(edge)
+            self._edge_keys.add(key)
 
     def to_dict(self) -> dict:
         """Convert graph to dictionary for JSON serialization."""
@@ -106,6 +110,9 @@ def _build_dag_view(dags: dict) -> LineageGraph:
         if not tasks:
             continue
 
+        # Collect task edges first for transitive reduction
+        task_edges = []
+
         for task in tasks:
             task_id = task.get("id")
             if not task_id:
@@ -134,21 +141,59 @@ def _build_dag_view(dags: dict) -> LineageGraph:
                     target=f"{dag_name}:{task_id}"
                 ))
 
-            # Add edges for task dependencies (depends_on creates lineage)
+            # Collect task dependency edges
             for dep in depends_on:
-                # Skip self-referential dependencies
                 if dep == task_id:
                     continue
-                graph.add_edge(Edge(
-                    source=f"{dag_name}:{dep}",
-                    target=f"{dag_name}:{task_id}"
-                ))
+                task_edges.append((dep, task_id))
+
+        # Transitive reduction: remove edges implied by longer paths
+        reduced = _transitive_reduce(task_edges)
+        for source, target in reduced:
+            graph.add_edge(Edge(
+                source=f"{dag_name}:{source}",
+                target=f"{dag_name}:{target}"
+            ))
 
     return graph
 
 
+def _transitive_reduce(edges: list[tuple[str, str]]) -> list[tuple[str, str]]:
+    """Remove edges that are implied by transitive paths."""
+    # Build adjacency list
+    children = {}
+    for src, tgt in edges:
+        children.setdefault(src, set()).add(tgt)
+
+    def can_reach(start: str, end: str, excluded_edge: tuple[str, str]) -> bool:
+        """Check if end is reachable from start without using the excluded edge."""
+        visited = set()
+        stack = [start]
+        while stack:
+            node = stack.pop()
+            if node == end:
+                return True
+            if node in visited:
+                continue
+            visited.add(node)
+            for child in children.get(node, []):
+                if (node, child) == excluded_edge:
+                    continue
+                stack.append(child)
+        return False
+
+    return [
+        (src, tgt) for src, tgt in edges
+        if not can_reach(src, tgt, (src, tgt))
+    ]
+
+
 def _build_table_view(dags: dict) -> LineageGraph:
-    """Build table-centric view: Tables -> Tasks -> Tables (colored by data layer)."""
+    """Build table-centric view: direct table-to-table lineage (colored by data layer).
+
+    Extracts SOURCE_TABLE and TARGET_TABLE from task params and creates
+    direct edges between them, skipping task/DAG nodes entirely.
+    """
     graph = LineageGraph()
 
     for dag_file, dag_obj in dags.items():
@@ -158,60 +203,46 @@ def _build_table_view(dags: dict) -> LineageGraph:
         dag_name = list(dag_obj.keys())[0]
         dag_def = dag_obj[dag_name]
 
-        # Add DAG as a node
-        dag_node = Node(
-            id=f"dag:{dag_name}",
-            label=dag_name,
-            type="dag",
-            source_file=dag_file
-        )
-        graph.add_node(dag_node)
-
-        # Process tasks
         tasks = dag_def.get("tasks", [])
         if not tasks:
             continue
 
         for task in tasks:
-            task_id = task.get("id")
-            if not task_id:
+            params = task.get("params", {})
+            if not params:
                 continue
 
-            # Determine node type based on source file or params
-            node_type = _infer_node_type(task)
+            target_table = params.get("TARGET_TABLE")
+            if not target_table:
+                continue
 
-            # Create task node
-            task_node = Node(
-                id=f"{dag_name}:{task_id}",
-                label=task_id,
-                type=node_type,
-                dag=dag_name,
-                operator=task.get("op_type"),
-                source_file=task.get("source_file"),
-                params=task.get("params")
-            )
-            graph.add_node(task_node)
-
-            # Add edge from DAG to task
-            graph.add_edge(Edge(
-                source=f"dag:{dag_name}",
-                target=f"{dag_name}:{task_id}"
+            # Add target table node
+            target_type = _infer_table_type(target_table)
+            graph.add_node(Node(
+                id=f"table:{target_table}",
+                label=target_table,
+                type=target_type
             ))
 
-            # Add edges for task dependencies
-            depends_on = task.get("depends_on", [])
-            for dep in depends_on:
-                if dep == task_id:
+            # Find all source tables: any param ending in _TABLE that isn't TARGET_TABLE
+            for key, value in params.items():
+                if key == "TARGET_TABLE" or not key.endswith("_TABLE"):
                     continue
-                graph.add_edge(Edge(
-                    source=f"{dag_name}:{dep}",
-                    target=f"{dag_name}:{task_id}"
+                if not value:
+                    continue
+
+                source_type = _infer_table_type(value)
+                graph.add_node(Node(
+                    id=f"table:{value}",
+                    label=value,
+                    type=source_type
                 ))
 
-            # Add table nodes from params
-            params = task.get("params", {})
-            if params:
-                _add_table_nodes(graph, dag_name, task_id, params)
+                # Direct edge: source table → target table
+                graph.add_edge(Edge(
+                    source=f"table:{value}",
+                    target=f"table:{target_table}"
+                ))
 
     return graph
 
@@ -307,7 +338,7 @@ def generate_html_multi_view(dags: dict, output_path: Optional[Path] = None) -> 
     all_graphs = {
         "dag": dag_graph.to_dict(),
         "table": table_graph.to_dict(),
-        "metric": table_graph.to_dict()  # Placeholder: same as table for now
+        "metric": {"nodes": [], "edges": []}
     }
 
     # Load template files

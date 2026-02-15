@@ -24,7 +24,7 @@
     // Node type color mapping
     const NODE_COLORS = {
         // DAG container
-        dag: { fill: '#fef3c7', stroke: '#f59e0b' },
+        dag: { fill: '#f1f5f9', stroke: '#94a3b8' },
         // Operator types (DAG view)
         PythonOperator: { fill: '#dbeafe', stroke: '#3b82f6' },
         SnowflakeOperator: { fill: '#e0e7ff', stroke: '#6366f1' },
@@ -335,105 +335,207 @@
     // Graph Rendering
     // ============================================
     function render() {
-        // Create dagre graph with compound node support
-        const dagreGraph = new dagre.graphlib.Graph({ compound: true });
-        dagreGraph.setGraph({
-            rankdir: 'LR',
-            ranksep: CONFIG.rankSep,
-            nodesep: CONFIG.nodeSep,
-            edgesep: CONFIG.edgeSep
-        });
-        dagreGraph.setDefaultEdgeLabel(() => ({}));
+
+        // Show "coming soon" banner for empty views (e.g. metric)
+        if (graphData.nodes.length === 0) {
+            g.selectAll('*').remove();
+            const container = document.getElementById('graph-container');
+            const cx = container.clientWidth / 2;
+            const cy = container.clientHeight / 2;
+
+            // Reset zoom so banner is centered
+            svg.call(zoom.transform, d3.zoomIdentity);
+
+            const banner = g.append('g').attr('transform', `translate(${cx}, ${cy})`);
+            banner.append('rect')
+                .attr('x', -160)
+                .attr('y', -40)
+                .attr('width', 320)
+                .attr('height', 80)
+                .attr('rx', 12)
+                .attr('fill', '#f1f5f9')
+                .attr('stroke', '#cbd5e1')
+                .attr('stroke-width', 1.5)
+                .attr('stroke-dasharray', '6 4');
+            banner.append('text')
+                .attr('text-anchor', 'middle')
+                .attr('dy', '0.35em')
+                .attr('font-size', '18px')
+                .attr('font-weight', '600')
+                .attr('fill', '#64748b')
+                .text('Coming Soon');
+            return;
+        }
 
         // Separate DAG nodes (clusters) from regular nodes
         const dagNodes = graphData.nodes.filter(n => n.type === 'dag' && visibleNodes.has(n.id));
         const taskNodes = graphData.nodes.filter(n => n.type !== 'dag' && visibleNodes.has(n.id));
 
-        // Add DAG nodes as clusters
+        // If no DAG clusters, use simple flat layout (e.g. table view)
+        if (dagNodes.length === 0) {
+            renderFlat(taskNodes);
+            return;
+        }
+
+        // Group tasks by their parent DAG
+        const dagTaskGroups = {};
         dagNodes.forEach(dag => {
-            dagreGraph.setNode(dag.id, {
-                label: dag.label,
-                clusterLabelPos: 'top',
-                style: 'fill: #fef3c7; stroke: #f59e0b;',
-                paddingTop: 30,
-                paddingBottom: 15,
-                paddingLeft: 15,
-                paddingRight: 15
-            });
+            const dagName = dag.label;
+            dagTaskGroups[dagName] = taskNodes.filter(n => n.dag === dagName);
         });
 
-        // Add task nodes and set their parent DAG
-        taskNodes.forEach(node => {
-            dagreGraph.setNode(node.id, {
-                label: node.label,
-                width: CONFIG.nodeWidth,
-                height: CONFIG.nodeHeight
+        // Layout each DAG's tasks independently, then stack them vertically
+        const clusterPadding = { top: 45, bottom: 25, left: 30, right: 30 };
+        const clusterGap = 40;
+        const dagLayouts = {}; // { dagName: { nodes: {id: {x,y}}, edges: [...], bbox } }
+
+        dagNodes.forEach(dag => {
+            const dagName = dag.label;
+            const tasks = dagTaskGroups[dagName] || [];
+            if (tasks.length === 0) return;
+
+            // Create a separate dagre graph for this DAG's tasks
+            const subGraph = new dagre.graphlib.Graph();
+            subGraph.setGraph({
+                rankdir: 'LR',
+                ranksep: CONFIG.rankSep,
+                nodesep: CONFIG.nodeSep,
+                edgesep: CONFIG.edgeSep
+            });
+            subGraph.setDefaultEdgeLabel(() => ({}));
+
+            const taskIds = new Set(tasks.map(t => t.id));
+            tasks.forEach(t => {
+                subGraph.setNode(t.id, {
+                    label: t.label,
+                    width: CONFIG.nodeWidth,
+                    height: CONFIG.nodeHeight
+                });
             });
 
-            // Set parent to DAG if this task belongs to a DAG
-            if (node.dag) {
-                const dagId = `dag:${node.dag}`;
-                if (dagreGraph.hasNode(dagId)) {
-                    dagreGraph.setParent(node.id, dagId);
+            // Add edges only within this DAG
+            graphData.edges.forEach(edge => {
+                if (edge.source.startsWith('dag:')) return;
+                if (taskIds.has(edge.source) && taskIds.has(edge.target)) {
+                    subGraph.setEdge(edge.source, edge.target);
                 }
-            }
+            });
+
+            dagre.layout(subGraph);
+
+            // Collect positioned nodes and compute bounding box
+            const positioned = {};
+            let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
+            tasks.forEach(t => {
+                const n = subGraph.node(t.id);
+                positioned[t.id] = { x: n.x, y: n.y };
+                minX = Math.min(minX, n.x - CONFIG.nodeWidth / 2);
+                maxX = Math.max(maxX, n.x + CONFIG.nodeWidth / 2);
+                minY = Math.min(minY, n.y - CONFIG.nodeHeight / 2);
+                maxY = Math.max(maxY, n.y + CONFIG.nodeHeight / 2);
+            });
+
+            // Collect edge points
+            const edgePoints = {};
+            graphData.edges.forEach(edge => {
+                if (edge.source.startsWith('dag:')) return;
+                if (taskIds.has(edge.source) && taskIds.has(edge.target)) {
+                    const de = subGraph.edge(edge.source, edge.target);
+                    if (de) edgePoints[`${edge.source}|${edge.target}`] = de.points;
+                }
+            });
+
+            dagLayouts[dagName] = {
+                nodes: positioned,
+                edgePoints,
+                contentWidth: maxX - minX,
+                contentHeight: maxY - minY,
+                // Offset to normalize positions so content starts at (0,0)
+                originX: minX,
+                originY: minY
+            };
         });
 
-        // Add visible edges (only between tasks, not from DAG to task)
-        graphData.edges.forEach((edge, i) => {
-            if (!visibleEdges.has(i)) return;
-            if (!visibleNodes.has(edge.source) || !visibleNodes.has(edge.target)) return;
-            // Skip edges from DAG to task (containment is shown by clustering)
-            if (edge.source.startsWith('dag:')) return;
-
-            dagreGraph.setEdge(edge.source, edge.target);
+        // Compute uniform cluster size from largest content
+        let maxContentWidth = 0, maxContentHeight = 0;
+        Object.values(dagLayouts).forEach(layout => {
+            maxContentWidth = Math.max(maxContentWidth, layout.contentWidth);
+            maxContentHeight = Math.max(maxContentHeight, layout.contentHeight);
         });
 
-        // Calculate layout
-        dagre.layout(dagreGraph);
+        const uniformWidth = clusterPadding.left + maxContentWidth + clusterPadding.right;
+        const uniformHeight = clusterPadding.top + maxContentHeight + clusterPadding.bottom;
+
+        // Position each cluster: all left-aligned, stacked vertically
+        let currentY = 0;
+        const clusterPositions = {}; // { dagName: { x, y } } — top-left corner
+
+        dagNodes.forEach(dag => {
+            const dagName = dag.label;
+            if (!dagLayouts[dagName]) return;
+            clusterPositions[dagName] = { x: 0, y: currentY };
+            currentY += uniformHeight + clusterGap;
+        });
 
         // Clear previous render
         g.selectAll('*').remove();
 
         // Render DAG clusters (containers) first (background)
         const clusterGroup = g.append('g').attr('class', 'clusters');
+
         dagNodes.forEach(dag => {
-            const dagreNode = dagreGraph.node(dag.id);
-            if (!dagreNode) return;
+            const dagName = dag.label;
+            const layout = dagLayouts[dagName];
+            const pos = clusterPositions[dagName];
+            if (!layout || !pos) return;
+
+            // Store position (center) for info panel / selection
+            dag.x = pos.x + uniformWidth / 2;
+            dag.y = pos.y + uniformHeight / 2;
 
             const clusterG = clusterGroup.append('g')
                 .attr('class', 'cluster type-dag')
                 .attr('data-id', dag.id)
-                .attr('transform', `translate(${dagreNode.x - dagreNode.width/2}, ${dagreNode.y - dagreNode.height/2})`);
-
-            // Store position
-            dag.x = dagreNode.x;
-            dag.y = dagreNode.y;
+                .attr('transform', `translate(${pos.x}, ${pos.y})`);
 
             // Cluster background rectangle
             clusterG.append('rect')
-                .attr('width', dagreNode.width)
-                .attr('height', dagreNode.height)
+                .attr('width', uniformWidth)
+                .attr('height', uniformHeight)
                 .attr('rx', 8)
                 .attr('ry', 8)
-                .attr('fill', '#fef3c7')
-                .attr('stroke', '#f59e0b')
-                .attr('stroke-width', 2)
-                .attr('opacity', 0.5);
+                .attr('fill', '#f1f5f9')
+                .attr('stroke', '#94a3b8')
+                .attr('stroke-width', 1.5)
+                .attr('stroke-dasharray', '6 4')
+                .attr('opacity', 0.7);
 
-            // Cluster label at top
+            // Cluster label at upper left
             clusterG.append('text')
-                .attr('x', dagreNode.width / 2)
-                .attr('y', 20)
-                .attr('text-anchor', 'middle')
+                .attr('x', 14)
+                .attr('y', 22)
+                .attr('text-anchor', 'start')
                 .attr('font-weight', '600')
-                .attr('font-size', '14px')
-                .attr('fill', '#92400e')
-                .text(dag.label);
+                .attr('font-size', '13px')
+                .attr('fill', '#475569')
+                .text(dagName);
 
             // Click handler for cluster
             clusterG.on('click', () => selectNode(dag.id));
         });
+
+        // Helper: compute absolute position for a task node
+        function getTaskAbsolutePos(node) {
+            const dagName = node.dag;
+            const layout = dagLayouts[dagName];
+            const pos = clusterPositions[dagName];
+            if (!layout || !pos || !layout.nodes[node.id]) return null;
+            const local = layout.nodes[node.id];
+            return {
+                x: pos.x + clusterPadding.left + (local.x - layout.originX),
+                y: pos.y + clusterPadding.top + (local.y - layout.originY)
+            };
+        }
 
         // Render edges
         const edgeGroup = g.append('g').attr('class', 'edges');
@@ -444,10 +546,25 @@
             // Skip DAG->task edges (shown by containment)
             if (edge.source.startsWith('dag:')) return;
 
-            const dagreEdge = dagreGraph.edge(edge.source, edge.target);
-            if (!dagreEdge) return;
+            // Find which DAG this edge belongs to
+            const srcNode = graphData.nodes.find(n => n.id === edge.source);
+            if (!srcNode || !srcNode.dag) return;
+            const dagName = srcNode.dag;
+            const layout = dagLayouts[dagName];
+            const pos = clusterPositions[dagName];
+            if (!layout || !pos) return;
 
-            const path = edgeGroup.append('g')
+            const key = `${edge.source}|${edge.target}`;
+            const points = layout.edgePoints[key];
+            if (!points) return;
+
+            // Offset edge points to absolute position
+            const offsetPoints = points.map(p => ({
+                x: pos.x + clusterPadding.left + (p.x - layout.originX),
+                y: pos.y + clusterPadding.top + (p.y - layout.originY)
+            }));
+
+            const pathG = edgeGroup.append('g')
                 .attr('class', 'edge')
                 .attr('data-source', edge.source)
                 .attr('data-target', edge.target);
@@ -457,26 +574,26 @@
                 .y(d => d.y)
                 .curve(d3.curveBasis);
 
-            path.append('path')
-                .attr('d', line(dagreEdge.points))
+            pathG.append('path')
+                .attr('d', line(offsetPoints))
                 .attr('marker-end', 'url(#arrowhead)');
         });
 
         // Render task nodes (on top of clusters)
         const nodeGroup = g.append('g').attr('class', 'nodes');
         taskNodes.forEach(node => {
-            const dagreNode = dagreGraph.node(node.id);
-            if (!dagreNode) return;
+            const absPos = getTaskAbsolutePos(node);
+            if (!absPos) return;
 
             const nodeType = node.type || 'default';
             const nodeG = nodeGroup.append('g')
                 .attr('class', `node type-${nodeType}`)
                 .attr('data-id', node.id)
-                .attr('transform', `translate(${dagreNode.x - CONFIG.nodeWidth/2}, ${dagreNode.y - CONFIG.nodeHeight/2})`);
+                .attr('transform', `translate(${absPos.x - CONFIG.nodeWidth/2}, ${absPos.y - CONFIG.nodeHeight/2})`);
 
             // Store position for later use
-            node.x = dagreNode.x;
-            node.y = dagreNode.y;
+            node.x = absPos.x;
+            node.y = absPos.y;
 
             // Node rectangle
             nodeG.append('rect')
@@ -499,6 +616,114 @@
             });
 
             // Drag behavior
+            const drag = d3.drag()
+                .on('start', function() {
+                    d3.select(this).classed('dragging', true);
+                })
+                .on('drag', function(event) {
+                    const newX = event.x - CONFIG.nodeWidth / 2;
+                    const newY = event.y - CONFIG.nodeHeight / 2;
+                    d3.select(this).attr('transform', `translate(${newX}, ${newY})`);
+                    node.x = event.x;
+                    node.y = event.y;
+                    updateEdgesForNode(node.id);
+                })
+                .on('end', function() {
+                    d3.select(this).classed('dragging', false);
+                });
+
+            nodeG.call(drag);
+        });
+    }
+
+    // ============================================
+    // Flat Layout (no clusters — used for table/metric views)
+    // ============================================
+    function renderFlat(nodes) {
+        const flatGraph = new dagre.graphlib.Graph();
+        flatGraph.setGraph({
+            rankdir: 'LR',
+            ranksep: CONFIG.rankSep,
+            nodesep: CONFIG.nodeSep,
+            edgesep: CONFIG.edgeSep
+        });
+        flatGraph.setDefaultEdgeLabel(() => ({}));
+
+        nodes.forEach(node => {
+            flatGraph.setNode(node.id, {
+                label: node.label,
+                width: CONFIG.nodeWidth,
+                height: CONFIG.nodeHeight
+            });
+        });
+
+        const nodeIds = new Set(nodes.map(n => n.id));
+        graphData.edges.forEach((edge, i) => {
+            if (!visibleEdges.has(i)) return;
+            if (nodeIds.has(edge.source) && nodeIds.has(edge.target)) {
+                flatGraph.setEdge(edge.source, edge.target);
+            }
+        });
+
+        dagre.layout(flatGraph);
+
+        // Clear previous render
+        g.selectAll('*').remove();
+
+        // Render edges
+        const edgeGroup = g.append('g').attr('class', 'edges');
+        graphData.edges.forEach((edge, i) => {
+            if (!visibleEdges.has(i)) return;
+            if (!nodeIds.has(edge.source) || !nodeIds.has(edge.target)) return;
+
+            const dagreEdge = flatGraph.edge(edge.source, edge.target);
+            if (!dagreEdge) return;
+
+            const pathG = edgeGroup.append('g')
+                .attr('class', 'edge')
+                .attr('data-source', edge.source)
+                .attr('data-target', edge.target);
+
+            const line = d3.line()
+                .x(d => d.x)
+                .y(d => d.y)
+                .curve(d3.curveBasis);
+
+            pathG.append('path')
+                .attr('d', line(dagreEdge.points))
+                .attr('marker-end', 'url(#arrowhead)');
+        });
+
+        // Render nodes
+        const nodeGroup = g.append('g').attr('class', 'nodes');
+        nodes.forEach(node => {
+            const dagreNode = flatGraph.node(node.id);
+            if (!dagreNode) return;
+
+            const nodeType = node.type || 'default';
+            const nodeG = nodeGroup.append('g')
+                .attr('class', `node type-${nodeType}`)
+                .attr('data-id', node.id)
+                .attr('transform', `translate(${dagreNode.x - CONFIG.nodeWidth/2}, ${dagreNode.y - CONFIG.nodeHeight/2})`);
+
+            node.x = dagreNode.x;
+            node.y = dagreNode.y;
+
+            nodeG.append('rect')
+                .attr('width', CONFIG.nodeWidth)
+                .attr('height', CONFIG.nodeHeight)
+                .attr('rx', 6)
+                .attr('ry', 6);
+
+            nodeG.append('text')
+                .attr('x', CONFIG.nodeWidth / 2)
+                .attr('y', CONFIG.nodeHeight / 2)
+                .attr('dy', '0.35em')
+                .attr('text-anchor', 'middle')
+                .text(truncateLabel(node.label, 20));
+
+            nodeG.on('click', () => selectNode(node.id));
+
             const drag = d3.drag()
                 .on('start', function() {
                     d3.select(this).classed('dragging', true);

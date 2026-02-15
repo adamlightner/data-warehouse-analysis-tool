@@ -30,3 +30,4 @@ load_games:
       params:
         TARGET_TABLE: FACT.NFL_GAME
         SOURCE_TABLE: STAGING.NFL_GAME
+        TEAM_TABLE: STAGING.NFL_GAME
