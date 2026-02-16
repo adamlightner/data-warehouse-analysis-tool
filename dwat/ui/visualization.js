@@ -166,41 +166,29 @@
     // Controls Setup
     // ============================================
     function setupControls() {
-        // Reset view
+        // Reset: restore all nodes, clear selection/highlights, fit to screen
         document.getElementById('reset-view').addEventListener('click', () => {
             resetView();
         });
 
-        // Zoom in
+        // Zoom in/out
         document.getElementById('zoom-in').addEventListener('click', () => {
             svg.transition().duration(300).call(zoom.scaleBy, 1.3);
         });
-
-        // Zoom out
         document.getElementById('zoom-out').addEventListener('click', () => {
             svg.transition().duration(300).call(zoom.scaleBy, 0.7);
         });
 
-        // Fit to view
-        document.getElementById('fit-view').addEventListener('click', fitToView);
-
-        // Show upstream
+        // Upstream/downstream filtering (requires a selected node)
         document.getElementById('show-upstream').addEventListener('click', () => {
             if (selectedNode) {
                 showLineage(selectedNode, 'upstream');
             }
         });
-
-        // Show downstream
         document.getElementById('show-downstream').addEventListener('click', () => {
             if (selectedNode) {
                 showLineage(selectedNode, 'downstream');
             }
-        });
-
-        // Show all
-        document.getElementById('show-all').addEventListener('click', () => {
-            showAllNodes();
         });
 
         // Info panel close
@@ -895,19 +883,6 @@
     }
 
     // ============================================
-    // Show All Nodes
-    // ============================================
-    function showAllNodes() {
-        graphData.nodes.forEach(n => visibleNodes.add(n.id));
-        graphData.edges.forEach((e, i) => visibleEdges.add(i));
-
-        selectedNode = null;
-        render();
-        fitToView();
-        closeInfoPanel();
-    }
-
-    // ============================================
     // Filter by Type
     // ============================================
     function filterByType(type) {
@@ -980,13 +955,16 @@
     }
 
     function resetView() {
-        // Clear highlights
-        g.selectAll('.node').classed('dimmed', false).classed('selected', false).classed('highlighted', false);
-        g.selectAll('.edge').classed('dimmed', false).classed('highlighted', false);
-        g.selectAll('.edge path').attr('marker-end', 'url(#arrowhead)');
+        // Restore all nodes and edges (undoes upstream/downstream filtering)
+        graphData.nodes.forEach(n => visibleNodes.add(n.id));
+        graphData.edges.forEach((_, i) => visibleEdges.add(i));
 
+        // Clear selection and highlights
         selectedNode = null;
         closeInfoPanel();
+
+        // Re-render with everything visible, then fit to screen
+        render();
         fitToView();
     }
 

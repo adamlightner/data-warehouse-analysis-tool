@@ -1,4 +1,4 @@
-insert into {{ TARGET_TABLE }} tgt (
+insert into {{ TARGET_TABLE }} (
     game_id,
     game_date,
     home_team_id,

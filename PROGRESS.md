@@ -97,11 +97,32 @@ data_warehouse_analysis_tool/
 - [x] Moved example SQL files from `examples/sql_scripts/` → `examples/sql/`
 - [x] Updated example YAML (`games.yml`) with additional `TEAM_TABLE` param
 
+### Session 5 - Table Lineage v2 (SQL Parsing), UI Consolidation, Tests (2026-02-15)
+- [x] Implemented Table Lineage v2 (SQL-driven via sqlglot)
+  - [x] `_build_table_view()` now loads SQL files, renders Jinja with YAML params, parses with sqlglot
+  - [x] `get_transaction_type()` dispatches to handler based on statement type
+  - [x] `_parse_insert()` extracts target + table deps from INSERT...SELECT (FROM, JOIN)
+  - [x] `_parse_merge()` extracts target + table deps from MERGE...USING
+  - [x] `_table_name()` helper for consistent fully-qualified name extraction
+  - [x] Self-references filtered out (e.g. target table in WHERE subquery)
+  - [x] Replaces v1 YAML-only approach — lineage now derived from actual SQL
+- [x] Consolidated toolbar controls in UI
+  - [x] Merged Reset + Show All + Fit to View into single Reset button
+  - [x] Removed redundant `showAllNodes()` function
+  - [x] Toolbar reduced from 7 buttons to 4 (Reset, +, -, Upstream, Downstream)
+- [x] Cleaned up unused functions in `lineage.py`
+  - [x] Removed `_infer_node_type()` and `_add_table_nodes()` (leftover from v1)
+- [x] Fixed example data: `TEAM_TABLE` in `games.yml` corrected to `DIMENSION.NFL_TEAM`
+- [x] Added pytest test suite (25 tests, all passing)
+  - [x] `test_dag_parser.py` — load_dag, load_dags, extract_tasks
+  - [x] `test_sql_parser.py` — load/format, INSERT parsing, MERGE parsing, edge cases
+  - [x] `test_cli.py` — help, version, all parse subcommands, lineage generation
+
 ---
 
 ## Current Status
 
-**Phase:** Table Lineage v1 Complete (YAML-driven) — SQL parsing next
+**Phase:** Table Lineage v2 Complete (SQL-driven via sqlglot)
 
 **Working CLI Commands:**
 ```bash
@@ -120,13 +141,11 @@ dwat lineage <path> -o out.html --open   # Generate and open in browser
 - Extract tasks, dependencies, operators, parameters
 - Multi-view toggle: DAG view (operator-based), Table view (data layer-based), Metric view (placeholder)
 - DAG view shows tasks inside DAG container boxes with `depends_on` lineage
-- Table view (v1) shows table-to-table lineage derived from YAML `*_TABLE` params
+- Table view (v2) parses SQL files with sqlglot to extract table dependencies (INSERT, MERGE)
+- Jinja2 template variables in SQL resolved from YAML task params before parsing
 - Transitive reduction removes redundant edges from lineage graph
-- Load and Jinja2-render SQL files with template variables
 - Generate self-contained interactive HTML visualization
-
-**Key Limitation:**
-Table lineage currently relies entirely on YAML param metadata (`TARGET_TABLE`, `SOURCE_TABLE`, etc.). It does NOT parse SQL files to extract table dependencies. The `sqlglot` library is installed but unused.
+- Test suite: 25 pytest tests covering parsers and CLI
 
 ---
 
@@ -157,7 +176,7 @@ The tool should support three distinct lineage perspectives:
 
 #### 2. Table Lineage
 **What it shows:** Source tables → Transformations → Target tables
-**Data source:** YAML params (v1 - done) → SQL files via sqlglot (v2 - next)
+**Data source:** SQL files parsed via sqlglot (Jinja resolved from YAML params)
 **Use case:** Impact analysis, data flow understanding
 
 ```
@@ -167,22 +186,25 @@ The tool should support three distinct lineage perspectives:
 └─────────────────┘     └─────────────────┘     └─────────────────┘
 ```
 
-**v1 (YAML-driven) — ✅ Complete:**
+**v1 (YAML-driven) — ✅ Complete (superseded by v2):**
 - [x] Extract `TARGET_TABLE` and `*_TABLE` params from YAML task definitions
 - [x] Build direct table-to-table edges from params
 - [x] Infer data layer (source/staging/fact/dimension) from table names
 - [x] Color nodes by data layer in visualization
 - [x] Toggle to Table view in UI button group
 
-**v2 (SQL-driven) — TODO:**
-- [ ] Implement SQL parser using sqlglot
-  - [ ] Extract source tables (FROM, JOIN clauses)
-  - [ ] Extract target tables (INSERT INTO, CREATE TABLE AS, MERGE INTO)
-  - [ ] Handle CTEs and subqueries
-  - [ ] Support template variables (`{{ TABLE_NAME }}`) — resolve from YAML params before parsing
-- [ ] Build table-level lineage graph from SQL (replace or supplement YAML-driven approach)
-- [ ] Merge SQL-parsed lineage with YAML metadata for context (operator type, DAG membership)
-- [ ] Update visualization to indicate lineage source (SQL-parsed vs YAML-inferred)
+**v2 (SQL-driven) — ✅ Complete:**
+- [x] Implemented SQL parser using sqlglot
+  - [x] Extract source tables (FROM, JOIN clauses) via `_parse_insert()`
+  - [x] Extract target tables (INSERT INTO, MERGE INTO) via `get_transaction_type()`
+  - [x] Support template variables (`{{ TABLE_NAME }}`) — resolved from YAML params before parsing
+  - [x] Self-references filtered out (target table appearing in WHERE subquery)
+- [x] Build table-level lineage graph from parsed SQL (replaces YAML-driven approach)
+
+**Still TODO:**
+- [ ] Handle CTEs and subqueries (currently only top-level FROM/JOIN)
+- [ ] Support CREATE TABLE AS SELECT (CTAS)
+- [ ] Support UPDATE statements
 
 ---
 
@@ -219,9 +241,9 @@ The tool should support three distinct lineage perspectives:
 | Priority | Feature | Complexity | Value | Status |
 |----------|---------|------------|-------|--------|
 | 1 | Table Lineage v1 (YAML params) | Medium | High | ✅ Done |
-| 2 | Table Lineage v2 (SQL parsing via sqlglot) | Medium | High - True lineage from SQL | **Next** |
+| 2 | Table Lineage v2 (SQL parsing via sqlglot) | Medium | High - True lineage from SQL | ✅ Done |
 | 3 | Combined View (UI toggle) | Medium | Medium - Toggle between views | ✅ Done |
-| 4 | Column Lineage | High | High - Compliance/debugging | Todo |
+| 4 | Column Lineage | High | High - Compliance/debugging | **Next** |
 | 5 | Export Options | Low | Medium - JSON, Mermaid, etc. | Todo |
 
 ---
@@ -330,18 +352,14 @@ dwat serve examples/ --port 8000
 1. **SQL Dialect:** Should we auto-detect or require explicit dialect flag?
    - sqlglot supports: Snowflake, BigQuery, Redshift, Postgres, etc.
 
-2. **Template Variables:** How to handle `{{ VAR }}` in SQL?
-   - Option A: Require params file to resolve
-   - Option B: Parse as-is, show as placeholder nodes
-   - Option C: Regex replace before parsing
+2. ~~**Template Variables:** How to handle `{{ VAR }}` in SQL?~~
+   - ✅ **Resolved:** Jinja2 renders template variables using YAML task params before sqlglot parsing
 
 3. ~~**Visualization Mode:** Single view that toggles, or separate commands?~~
    - ✅ **Resolved:** Using in-UI toggle buttons (DAG, Table, Metric)
 
-5. **SQL-Parsed vs YAML-Inferred Lineage:** When SQL parsing is implemented, should it fully replace YAML-driven table lineage, or supplement it?
-   - Option A: SQL-parsed overrides YAML params (SQL is source of truth)
-   - Option B: Merge both — SQL-parsed edges + YAML params as fallback for tasks without SQL
-   - Option C: Show both with visual distinction (confidence indicator)
+5. ~~**SQL-Parsed vs YAML-Inferred Lineage:** When SQL parsing is implemented, should it fully replace YAML-driven table lineage, or supplement it?~~
+   - ✅ **Resolved:** SQL-parsed replaces YAML params. Tasks without a `source_file` are skipped in table view.
 
 4. **Incremental Parsing:** For large warehouses, parse all SQL upfront or on-demand?
 

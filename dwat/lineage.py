@@ -6,6 +6,8 @@ from dataclasses import dataclass, field, asdict
 from pathlib import Path
 from typing import Optional
 
+from dwat.parsers.sql_parser import load_sql, format_sql, get_transaction_type
+
 
 @dataclass
 class Node:
@@ -189,10 +191,11 @@ def _transitive_reduce(edges: list[tuple[str, str]]) -> list[tuple[str, str]]:
 
 
 def _build_table_view(dags: dict) -> LineageGraph:
-    """Build table-centric view: direct table-to-table lineage (colored by data layer).
+    """Build table-centric view by parsing SQL files for lineage.
 
-    Extracts SOURCE_TABLE and TARGET_TABLE from task params and creates
-    direct edges between them, skipping task/DAG nodes entirely.
+    For each task with a source_file and params, loads the SQL file,
+    renders Jinja templates with params, then parses with sqlglot to
+    extract the target table and its dependencies.
     """
     graph = LineageGraph()
 
@@ -208,99 +211,57 @@ def _build_table_view(dags: dict) -> LineageGraph:
             continue
 
         for task in tasks:
+            source_file = task.get("source_file")
             params = task.get("params", {})
-            if not params:
+
+            if not source_file or not params:
                 continue
 
-            target_table = params.get("TARGET_TABLE")
-            if not target_table:
+            # Resolve SQL file path (relative to CWD, then relative to YAML dir)
+            sql_path = Path(source_file)
+            if not sql_path.is_absolute():
+                sql_path = Path.cwd() / source_file
+            if not sql_path.exists():
+                sql_path = Path(dag_file).parent / source_file
+            if not sql_path.exists():
                 continue
+
+            # Load SQL, render Jinja with params, parse for lineage
+            try:
+                raw_sql = load_sql(sql_path)
+                formatted_sql = format_sql(raw_sql, params)
+                result = get_transaction_type(formatted_sql)
+            except Exception:
+                continue
+
+            if not result:
+                continue
+
+            target = result["target"]
+            deps = result.get("table_deps", set())
 
             # Add target table node
-            target_type = _infer_table_type(target_table)
+            target_type = _infer_table_type(target)
             graph.add_node(Node(
-                id=f"table:{target_table}",
-                label=target_table,
+                id=f"table:{target}",
+                label=target,
                 type=target_type
             ))
 
-            # Find all source tables: any param ending in _TABLE that isn't TARGET_TABLE
-            for key, value in params.items():
-                if key == "TARGET_TABLE" or not key.endswith("_TABLE"):
-                    continue
-                if not value:
-                    continue
-
-                source_type = _infer_table_type(value)
+            # Add dependency nodes and edges
+            for dep in deps:
+                dep_type = _infer_table_type(dep)
                 graph.add_node(Node(
-                    id=f"table:{value}",
-                    label=value,
-                    type=source_type
+                    id=f"table:{dep}",
+                    label=dep,
+                    type=dep_type
                 ))
-
-                # Direct edge: source table → target table
                 graph.add_edge(Edge(
-                    source=f"table:{value}",
-                    target=f"table:{target_table}"
+                    source=f"table:{dep}",
+                    target=f"table:{target}"
                 ))
 
     return graph
-
-
-def _infer_node_type(task: dict) -> str:
-    """Infer node type from task definition."""
-    source_file = task.get("source_file", "").lower()
-    params = task.get("params", {})
-    target = params.get("TARGET_TABLE", "").lower() if params else ""
-
-    if "staging" in source_file or "staging" in target or "stg_" in source_file:
-        return "staging"
-    elif "dimension" in source_file or "dimension" in target or "dim_" in source_file:
-        return "dimension"
-    elif "fact" in source_file or "fact" in target or "fct_" in source_file:
-        return "fact"
-    elif task.get("op_type") == "PythonOperator":
-        return "task"
-    elif "SnowflakeOperator" in task.get("op_type", ""):
-        return "table"
-    else:
-        return "task"
-
-
-def _add_table_nodes(graph: LineageGraph, dag_name: str, task_id: str, params: dict) -> None:
-    """Add table nodes and edges from task parameters."""
-    source_table = params.get("SOURCE_TABLE")
-    target_table = params.get("TARGET_TABLE")
-
-    if source_table:
-        source_type = _infer_table_type(source_table)
-        source_node = Node(
-            id=f"table:{source_table}",
-            label=source_table,
-            type=source_type
-        )
-        graph.add_node(source_node)
-
-        # Edge from source table to task
-        graph.add_edge(Edge(
-            source=f"table:{source_table}",
-            target=f"{dag_name}:{task_id}"
-        ))
-
-    if target_table:
-        target_type = _infer_table_type(target_table)
-        target_node = Node(
-            id=f"table:{target_table}",
-            label=target_table,
-            type=target_type
-        )
-        graph.add_node(target_node)
-
-        # Edge from task to target table
-        graph.add_edge(Edge(
-            source=f"{dag_name}:{task_id}",
-            target=f"table:{target_table}"
-        ))
 
 
 def _infer_table_type(table_name: str) -> str:

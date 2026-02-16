@@ -13,7 +13,7 @@ load_games:
     - id: insert_to_staing
       op_type: SnowflakeOperator
       pool: nfl
-      source_file: examples/sample_warehouse/sql_scripts/staging/stg_game.sql
+      source_file: examples/sql/staging/stg_game.sql
       params:
         TARGET_TABLE: STAGING.NFL_GAME
         SOURCE_TABLE: INGESTION.NFL_GAME
@@ -23,11 +23,11 @@ load_games:
     - id: insert_to_fact
       op_type: SnowflakeOperator
       pool: nfl
-      source_file: examples/sample_warehouse/sql_scripts/fact/fct_game.sql
+      source_file: examples/sql/fact/fct_game.sql
       depends_on:
         - get_batch
         - insert_to_staing
       params:
         TARGET_TABLE: FACT.NFL_GAME
         SOURCE_TABLE: STAGING.NFL_GAME
-        TEAM_TABLE: STAGING.NFL_GAME
+        TEAM_TABLE: DIMENSION.NFL_TEAM

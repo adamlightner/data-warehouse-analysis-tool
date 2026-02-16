@@ -36,7 +36,7 @@ dwat/
 ├── dwat/
 │   ├── parsers/
 │   │   ├── dag_parser.py    # YAML parsing: files → dict
-│   │   └── query_parser.py  # SQL parsing (placeholder)
+│   │   └── sql_parser.py    # SQL loading, Jinja rendering, sqlglot parsing
 │   ├── lineage.py           # Graph building + HTML generation
 │   ├── ui/                  # Visualization templates
 │   │   ├── template.html
@@ -46,8 +46,11 @@ dwat/
 │   └── cli.py               # CLI entry point
 ├── examples/
 │   ├── definitions/         # Sample YAML DAG files
-│   └── sql_scripts/         # Sample SQL files
+│   └── sql/                 # Sample SQL files (staging/, fact/, dimension/)
 ├── tests/
+│   ├── test_cli.py          # CLI command tests
+│   ├── test_dag_parser.py   # DAG parser tests
+│   └── test_sql_parser.py   # SQL parser tests
 └── pyproject.toml
 ```
 
@@ -56,11 +59,16 @@ dwat/
 ```
 ┌─────────────────┐     ┌──────────────────┐     ┌─────────────────┐     ┌─────────────────┐
 │   YAML Files    │ ──▶ │   dag_parser     │ ──▶ │   lineage.py    │ ──▶ │  HTML Output    │
-│  (DAG defs)     │     │  load_yamls()    │     │ build_graph()   │     │ (interactive)   │
+│  (DAG defs)     │     │  load_dags()     │     │ build_graph()   │     │ (interactive)   │
 └─────────────────┘     └──────────────────┘     └─────────────────┘     └─────────────────┘
-                              │                        │
-                              ▼                        ▼
-                         dict[path, yaml]         LineageGraph
+                                                       │
+                         ┌──────────────────┐          │
+                         │   sql_parser     │          │
+┌─────────────────┐      │  load_sql()      │          │
+│   SQL Files     │ ──▶  │  format_sql()    │ ─────────┘
+│  (.sql + Jinja) │      │  get_transaction │   (table view: SQL-parsed lineage)
+└─────────────────┘      │    _type()       │
+                         └──────────────────┘
 ```
 
 ---
@@ -126,7 +134,7 @@ load_games:
 
 ### Step 2: DAG Parser Output
 
-**Function:** `dag_parser.load_yamls(path: Path) -> dict`
+**Function:** `dag_parser.load_dags(path: Path) -> dict`
 
 **Output:** Dictionary mapping file paths to parsed YAML content
 
@@ -280,34 +288,33 @@ The generated HTML includes:
 ### CLI Commands
 
 ```bash
-# Load and display DAGs from YAML files
-dwat dags examples/definitions/
+# Parse commands
+dwat parse dag examples/definitions/games.yml         # Load single DAG
+dwat parse dags examples/definitions/                  # Load all DAGs
+dwat parse sql examples/sql/staging/stg_game.sql       # Load SQL file
+dwat parse sql examples/sql/staging/stg_game.sql \
+  --context '{"TARGET_TABLE": "STG.GAME", "SOURCE_TABLE": "RAW.GAME"}' --verbose
 
-# Generate lineage visualization (coming soon)
-dwat lineage examples/definitions/ --output lineage.html --open
-
-# Parse SQL file (placeholder)
-dwat parse examples/sql_scripts/staging/stg_game.sql
+# Generate lineage visualization
+dwat lineage examples/definitions/                     # Generate lineage.html
+dwat lineage examples/definitions/ -o out.html --open  # Custom output + open in browser
 ```
 
 ### Python API
 
 ```python
 from pathlib import Path
-from dwat.parsers.dag_parser import load_yamls
-from dwat.lineage import build_graph_from_dags, generate_html, open_in_browser
+from dwat.parsers.dag_parser import load_dags
+from dwat.lineage import generate_html_multi_view, open_in_browser
 
 # Step 1: Load YAML files
-dags = load_yamls(Path("examples/definitions/"))
+dags = load_dags(Path("examples/definitions/"))
 
-# Step 2: Build lineage graph
-graph = build_graph_from_dags(dags)
-
-# Step 3: Generate HTML visualization
+# Step 2: Generate HTML (builds DAG + Table view graphs internally)
 output_path = Path("lineage.html")
-generate_html(graph, output_path)
+generate_html_multi_view(dags, output_path)
 
-# Step 4: Open in browser
+# Step 3: Open in browser
 open_in_browser(output_path)
 ```
 
@@ -318,7 +325,9 @@ open_in_browser(output_path)
 ### Running Tests
 ```bash
 pip install -e ".[dev]"
-pytest
+pytest              # Run all 25 tests
+pytest -v           # Verbose output
+pytest tests/test_sql_parser.py  # Run specific module
 ```
 
 ### Code Quality
@@ -334,19 +343,21 @@ ruff check dwat tests
 
 See `PROGRESS.md` for detailed status and roadmap.
 
-**Current Phase:** Core lineage visualization in development
+**Current Phase:** Table lineage v2 complete (SQL-driven)
 
 **Implemented:**
 - YAML DAG parsing
-- Lineage graph building
-- Interactive HTML visualization (D3.js + Dagre)
+- SQL parsing with sqlglot (INSERT, MERGE) for table-level lineage
+- Jinja2 template rendering for SQL with YAML params
+- Multi-view interactive HTML visualization (DAG view, Table view)
+- Lineage graph building with transitive reduction
+- Test suite (25 pytest tests)
 
-**Future:**
-- SQL parsing with sqlglot for table/column extraction
+**Next:**
 - Column-level lineage
-- Advanced dependency analysis
-- Performance metrics
+- CTE / subquery support in SQL parser
 - Export to other formats (JSON, Mermaid, etc.)
+- Dynamic web application with FastAPI backend
 
 ## Tech Stack
 - **SQL Parsing:** sqlglot (multi-dialect support)

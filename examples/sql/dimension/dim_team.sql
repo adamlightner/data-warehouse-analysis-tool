@@ -7,24 +7,24 @@ using (
         logo_url
     from
         {{ SOURCE_TABLE }} s
-)
-on tgt.id = s.id
+) src
+on tgt.team_id = src.team_id
 when matched then
-    set update
-        tgt.team_name = s.team_name,
-        tgt.location = s.location,
-        tgt.logo_url = s.logo_url
+    update set
+        tgt.team_name = src.team_name,
+        tgt.location = src.location,
+        tgt.logo_url = src.logo_url
 when not matched
     insert (
-        id, 
+        team_id, 
         team_name, 
         location, 
         logo_url
     )
     values (
-        s.id, 
-        s.team_name, 
-        s.location, 
-        s.logo_url
+        src.id, 
+        src.team_name, 
+        src.location, 
+        src.logo_url
     )
 ;
