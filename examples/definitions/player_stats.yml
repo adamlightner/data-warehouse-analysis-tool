@@ -1,0 +1,33 @@
+load_player_stats:
+  catchup: false
+  owner: airflow
+  schedule: 0 6 * * 2
+  max_active_runs: 1
+  max_retries: 2
+  tasks:
+
+    - id: get_batch
+      op_type: PythonOperator
+      source_file: utils/get_batch.py
+
+    - id: insert_to_staging
+      op_type: SnowflakeOperator
+      pool: nfl
+      source_file: examples/sql/staging/stg_player_stats.sql
+      depends_on:
+        - get_batch
+      params:
+        TARGET_TABLE: STAGING.NFL_PLAYER_STATS
+        SOURCE_TABLE: INGESTION.NFL_PLAYER_STATS
+
+    - id: insert_to_fact
+      op_type: SnowflakeOperator
+      pool: nfl
+      source_file: examples/sql/fact/fct_player_stats.sql
+      depends_on:
+        - insert_to_staging
+      params:
+        TARGET_TABLE: FACT.NFL_PLAYER_STATS
+        SOURCE_TABLE: STAGING.NFL_PLAYER_STATS
+        PLAYER_TABLE: DIMENSION.NFL_PLAYER
+        GAME_TABLE: FACT.NFL_GAME

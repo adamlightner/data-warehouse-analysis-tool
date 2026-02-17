@@ -816,6 +816,46 @@ html, body {
   "dag": {
     "nodes": [
       {
+        "id": "dag:load_player_stats",
+        "label": "load_player_stats",
+        "type": "dag",
+        "source_file": "examples/definitions/player_stats.yml"
+      },
+      {
+        "id": "load_player_stats:get_batch",
+        "label": "get_batch",
+        "type": "PythonOperator",
+        "dag": "load_player_stats",
+        "operator": "PythonOperator",
+        "source_file": "utils/get_batch.py"
+      },
+      {
+        "id": "load_player_stats:insert_to_staging",
+        "label": "insert_to_staging",
+        "type": "SnowflakeOperator",
+        "dag": "load_player_stats",
+        "operator": "SnowflakeOperator",
+        "source_file": "examples/sql/staging/stg_player_stats.sql",
+        "params": {
+          "TARGET_TABLE": "STAGING.NFL_PLAYER_STATS",
+          "SOURCE_TABLE": "INGESTION.NFL_PLAYER_STATS"
+        }
+      },
+      {
+        "id": "load_player_stats:insert_to_fact",
+        "label": "insert_to_fact",
+        "type": "SnowflakeOperator",
+        "dag": "load_player_stats",
+        "operator": "SnowflakeOperator",
+        "source_file": "examples/sql/fact/fct_player_stats.sql",
+        "params": {
+          "TARGET_TABLE": "FACT.NFL_PLAYER_STATS",
+          "SOURCE_TABLE": "STAGING.NFL_PLAYER_STATS",
+          "PLAYER_TABLE": "DIMENSION.NFL_PLAYER",
+          "GAME_TABLE": "FACT.NFL_GAME"
+        }
+      },
+      {
         "id": "dag:load_teams",
         "label": "load_teams",
         "type": "dag",
@@ -879,9 +919,79 @@ html, body {
           "SOURCE_TABLE": "STAGING.NFL_GAME",
           "TEAM_TABLE": "DIMENSION.NFL_TEAM"
         }
+      },
+      {
+        "id": "dag:load_players",
+        "label": "load_players",
+        "type": "dag",
+        "source_file": "examples/definitions/players.yml"
+      },
+      {
+        "id": "load_players:get_batch",
+        "label": "get_batch",
+        "type": "PythonOperator",
+        "dag": "load_players",
+        "operator": "PythonOperator",
+        "source_file": "utils/get_batch.py"
+      },
+      {
+        "id": "load_players:insert_to_staging",
+        "label": "insert_to_staging",
+        "type": "SnowflakeOperator",
+        "dag": "load_players",
+        "operator": "SnowflakeOperator",
+        "source_file": "examples/sql/staging/stg_player.sql",
+        "params": {
+          "TARGET_TABLE": "STAGING.NFL_PLAYER",
+          "SOURCE_TABLE": "INGESTION.NFL_PLAYER"
+        }
+      },
+      {
+        "id": "load_players:update_dim_table",
+        "label": "update_dim_table",
+        "type": "SnowflakeOperator",
+        "dag": "load_players",
+        "operator": "SnowflakeOperator",
+        "source_file": "examples/sql/dimension/dim_player.sql",
+        "params": {
+          "TARGET_TABLE": "DIMENSION.NFL_PLAYER",
+          "SOURCE_TABLE": "STAGING.NFL_PLAYER",
+          "TEAM_TABLE": "DIMENSION.NFL_TEAM"
+        }
+      },
+      {
+        "id": "dag:build_standings",
+        "label": "build_standings",
+        "type": "dag",
+        "source_file": "examples/definitions/standings.yml"
+      },
+      {
+        "id": "build_standings:create_standings_view",
+        "label": "create_standings_view",
+        "type": "SnowflakeOperator",
+        "dag": "build_standings",
+        "operator": "SnowflakeOperator",
+        "source_file": "examples/sql/mart/v_standings.sql",
+        "params": {
+          "TARGET_VIEW": "MART.V_NFL_STANDINGS",
+          "TEAM_TABLE": "DIMENSION.NFL_TEAM",
+          "GAME_TABLE": "FACT.NFL_GAME"
+        }
       }
     ],
     "edges": [
+      {
+        "source": "dag:load_player_stats",
+        "target": "load_player_stats:get_batch"
+      },
+      {
+        "source": "load_player_stats:get_batch",
+        "target": "load_player_stats:insert_to_staging"
+      },
+      {
+        "source": "load_player_stats:insert_to_staging",
+        "target": "load_player_stats:insert_to_fact"
+      },
       {
         "source": "dag:load_teams",
         "target": "load_teams:get_batch"
@@ -901,11 +1011,52 @@ html, body {
       {
         "source": "load_games:insert_to_staing",
         "target": "load_games:insert_to_fact"
+      },
+      {
+        "source": "dag:load_players",
+        "target": "load_players:get_batch"
+      },
+      {
+        "source": "load_players:get_batch",
+        "target": "load_players:insert_to_staging"
+      },
+      {
+        "source": "load_players:insert_to_staging",
+        "target": "load_players:update_dim_table"
+      },
+      {
+        "source": "dag:build_standings",
+        "target": "build_standings:create_standings_view"
       }
     ]
   },
   "table": {
     "nodes": [
+      {
+        "id": "table:STAGING.NFL_PLAYER_STATS",
+        "label": "STAGING.NFL_PLAYER_STATS",
+        "type": "staging"
+      },
+      {
+        "id": "table:INGESTION.NFL_PLAYER_STATS",
+        "label": "INGESTION.NFL_PLAYER_STATS",
+        "type": "source"
+      },
+      {
+        "id": "table:FACT.NFL_PLAYER_STATS",
+        "label": "FACT.NFL_PLAYER_STATS",
+        "type": "fact"
+      },
+      {
+        "id": "table:FACT.NFL_GAME",
+        "label": "FACT.NFL_GAME",
+        "type": "fact"
+      },
+      {
+        "id": "table:DIMENSION.NFL_PLAYER",
+        "label": "DIMENSION.NFL_PLAYER",
+        "type": "dimension"
+      },
       {
         "id": "table:DIMENSION.NFL_TEAM",
         "label": "DIMENSION.NFL_TEAM",
@@ -927,12 +1078,33 @@ html, body {
         "type": "source"
       },
       {
-        "id": "table:FACT.NFL_GAME",
-        "label": "FACT.NFL_GAME",
-        "type": "fact"
+        "id": "table:STAGING.NFL_PLAYER",
+        "label": "STAGING.NFL_PLAYER",
+        "type": "staging"
+      },
+      {
+        "id": "table:INGESTION.NFL_PLAYER",
+        "label": "INGESTION.NFL_PLAYER",
+        "type": "source"
       }
     ],
     "edges": [
+      {
+        "source": "table:INGESTION.NFL_PLAYER_STATS",
+        "target": "table:STAGING.NFL_PLAYER_STATS"
+      },
+      {
+        "source": "table:FACT.NFL_GAME",
+        "target": "table:FACT.NFL_PLAYER_STATS"
+      },
+      {
+        "source": "table:STAGING.NFL_PLAYER_STATS",
+        "target": "table:FACT.NFL_PLAYER_STATS"
+      },
+      {
+        "source": "table:DIMENSION.NFL_PLAYER",
+        "target": "table:FACT.NFL_PLAYER_STATS"
+      },
       {
         "source": "table:INGESTION.NFL_TEAM",
         "target": "table:DIMENSION.NFL_TEAM"
@@ -942,12 +1114,24 @@ html, body {
         "target": "table:STAGING.NFL_GAME"
       },
       {
+        "source": "table:DIMENSION.NFL_TEAM",
+        "target": "table:FACT.NFL_GAME"
+      },
+      {
         "source": "table:STAGING.NFL_GAME",
         "target": "table:FACT.NFL_GAME"
       },
       {
+        "source": "table:INGESTION.NFL_PLAYER",
+        "target": "table:STAGING.NFL_PLAYER"
+      },
+      {
+        "source": "table:STAGING.NFL_PLAYER",
+        "target": "table:DIMENSION.NFL_PLAYER"
+      },
+      {
         "source": "table:DIMENSION.NFL_TEAM",
-        "target": "table:FACT.NFL_GAME"
+        "target": "table:DIMENSION.NFL_PLAYER"
       }
     ]
   },

@@ -1,0 +1,16 @@
+build_standings:
+  catchup: false
+  owner: airflow
+  schedule: 0 8 * * 2
+  max_active_runs: 1
+  max_retries: 2
+  tasks:
+
+    - id: create_standings_view
+      op_type: SnowflakeOperator
+      pool: nfl
+      source_file: examples/sql/mart/v_standings.sql
+      params:
+        TARGET_VIEW: MART.V_NFL_STANDINGS
+        TEAM_TABLE: DIMENSION.NFL_TEAM
+        GAME_TABLE: FACT.NFL_GAME
