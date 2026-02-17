@@ -276,6 +276,8 @@ def _infer_table_type(table_name: str) -> str:
         return "fact"
     elif "ingestion" in name_lower or "raw" in name_lower:
         return "source"
+    elif "mart" in name_lower or "v_" in name_lower:
+        return "mart"
     else:
         return "table"
 

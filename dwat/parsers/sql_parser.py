@@ -71,6 +71,30 @@ def _parse_merge(tree: exp.Merge) -> dict:
     }
 
 
+def _parse_create(tree: exp.Create) -> dict | None:
+    """Parse a CREATE VIEW/TABLE AS statement for lineage info."""
+    target_expr = tree.this
+    if isinstance(target_expr, exp.Schema):
+        target = _table_name(target_expr.this)
+    elif isinstance(target_expr, exp.Table):
+        target = _table_name(target_expr)
+    else:
+        return None
+
+    table_deps = set()
+    query = tree.expression
+    if query:
+        for table in query.find_all(exp.Table):
+            table_deps.add(_table_name(table))
+
+    table_deps.discard(target)
+
+    return {
+        "target": target,
+        "table_deps": table_deps,
+    }
+
+
 def get_transaction_type(sql: str) -> dict | None:
     """Parse SQL and return lineage info based on statement type.
 
@@ -83,5 +107,7 @@ def get_transaction_type(sql: str) -> dict | None:
         return _parse_insert(tree)
     if isinstance(tree, exp.Merge):
         return _parse_merge(tree)
+    if isinstance(tree, exp.Create):
+        return _parse_create(tree)
 
     return None

@@ -283,6 +283,7 @@ html, body {
 .node.type-staging rect { fill: #e0e7ff; stroke: #6366f1; }
 .node.type-dimension rect { fill: #fce7f3; stroke: #ec4899; }
 .node.type-fact rect { fill: #ccfbf1; stroke: #14b8a6; }
+.node.type-mart rect { fill: #ffedd5; stroke: #f97316; }
 .node.type-table rect { fill: #dbeafe; stroke: #3b82f6; }
 
 /* Fallback */

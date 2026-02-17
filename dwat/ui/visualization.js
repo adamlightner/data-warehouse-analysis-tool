@@ -38,6 +38,7 @@
         staging: { fill: '#e0e7ff', stroke: '#6366f1' },
         dimension: { fill: '#fce7f3', stroke: '#ec4899' },
         fact: { fill: '#ccfbf1', stroke: '#14b8a6' },
+        mart: { fill: '#ffedd5', stroke: '#f97316' },
         table: { fill: '#dbeafe', stroke: '#3b82f6' },
         // Fallbacks
         task: { fill: '#dcfce7', stroke: '#22c55e' },
@@ -394,9 +395,10 @@
 
             const taskIds = new Set(tasks.map(t => t.id));
             tasks.forEach(t => {
+                t.nodeWidth = getNodeWidth(t.label);
                 subGraph.setNode(t.id, {
                     label: t.label,
-                    width: CONFIG.nodeWidth,
+                    width: t.nodeWidth,
                     height: CONFIG.nodeHeight
                 });
             });
@@ -416,9 +418,10 @@
             let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
             tasks.forEach(t => {
                 const n = subGraph.node(t.id);
+                const w = t.nodeWidth || CONFIG.nodeWidth;
                 positioned[t.id] = { x: n.x, y: n.y };
-                minX = Math.min(minX, n.x - CONFIG.nodeWidth / 2);
-                maxX = Math.max(maxX, n.x + CONFIG.nodeWidth / 2);
+                minX = Math.min(minX, n.x - w / 2);
+                maxX = Math.max(maxX, n.x + w / 2);
                 minY = Math.min(minY, n.y - CONFIG.nodeHeight / 2);
                 maxY = Math.max(maxY, n.y + CONFIG.nodeHeight / 2);
             });
@@ -574,10 +577,11 @@
             if (!absPos) return;
 
             const nodeType = node.type || 'default';
+            const w = node.nodeWidth || CONFIG.nodeWidth;
             const nodeG = nodeGroup.append('g')
                 .attr('class', `node type-${nodeType}`)
                 .attr('data-id', node.id)
-                .attr('transform', `translate(${absPos.x - CONFIG.nodeWidth/2}, ${absPos.y - CONFIG.nodeHeight/2})`);
+                .attr('transform', `translate(${absPos.x - w/2}, ${absPos.y - CONFIG.nodeHeight/2})`);
 
             // Store position for later use
             node.x = absPos.x;
@@ -585,18 +589,18 @@
 
             // Node rectangle
             nodeG.append('rect')
-                .attr('width', CONFIG.nodeWidth)
+                .attr('width', w)
                 .attr('height', CONFIG.nodeHeight)
                 .attr('rx', 6)
                 .attr('ry', 6);
 
             // Node label
             nodeG.append('text')
-                .attr('x', CONFIG.nodeWidth / 2)
+                .attr('x', w / 2)
                 .attr('y', CONFIG.nodeHeight / 2)
                 .attr('dy', '0.35em')
                 .attr('text-anchor', 'middle')
-                .text(truncateLabel(node.label, 20));
+                .text(node.label);
 
             // Click handler
             nodeG.on('click', () => {
@@ -609,7 +613,8 @@
                     d3.select(this).classed('dragging', true);
                 })
                 .on('drag', function(event) {
-                    const newX = event.x - CONFIG.nodeWidth / 2;
+                    const nw = node.nodeWidth || CONFIG.nodeWidth;
+                    const newX = event.x - nw / 2;
                     const newY = event.y - CONFIG.nodeHeight / 2;
                     d3.select(this).attr('transform', `translate(${newX}, ${newY})`);
                     node.x = event.x;
@@ -623,6 +628,7 @@
             nodeG.call(drag);
         });
     }
+
 
     // ============================================
     // Flat Layout (no clusters — used for table/metric views)
@@ -638,9 +644,10 @@
         flatGraph.setDefaultEdgeLabel(() => ({}));
 
         nodes.forEach(node => {
+            node.nodeWidth = getNodeWidth(node.label);
             flatGraph.setNode(node.id, {
                 label: node.label,
-                width: CONFIG.nodeWidth,
+                width: node.nodeWidth,
                 height: CONFIG.nodeHeight
             });
         });
@@ -689,26 +696,27 @@
             if (!dagreNode) return;
 
             const nodeType = node.type || 'default';
+            const w = node.nodeWidth || CONFIG.nodeWidth;
             const nodeG = nodeGroup.append('g')
                 .attr('class', `node type-${nodeType}`)
                 .attr('data-id', node.id)
-                .attr('transform', `translate(${dagreNode.x - CONFIG.nodeWidth/2}, ${dagreNode.y - CONFIG.nodeHeight/2})`);
+                .attr('transform', `translate(${dagreNode.x - w/2}, ${dagreNode.y - CONFIG.nodeHeight/2})`);
 
             node.x = dagreNode.x;
             node.y = dagreNode.y;
 
             nodeG.append('rect')
-                .attr('width', CONFIG.nodeWidth)
+                .attr('width', w)
                 .attr('height', CONFIG.nodeHeight)
                 .attr('rx', 6)
                 .attr('ry', 6);
 
             nodeG.append('text')
-                .attr('x', CONFIG.nodeWidth / 2)
+                .attr('x', w / 2)
                 .attr('y', CONFIG.nodeHeight / 2)
                 .attr('dy', '0.35em')
                 .attr('text-anchor', 'middle')
-                .text(truncateLabel(node.label, 20));
+                .text(node.label);
 
             nodeG.on('click', () => selectNode(node.id));
 
@@ -754,9 +762,11 @@
     }
 
     function updateEdgePath(edge, sourceNode, targetNode) {
-        const startX = sourceNode.x + CONFIG.nodeWidth / 2;
+        const sourceW = sourceNode.nodeWidth || CONFIG.nodeWidth;
+        const targetW = targetNode.nodeWidth || CONFIG.nodeWidth;
+        const startX = sourceNode.x + sourceW / 2;
         const startY = sourceNode.y;
-        const endX = targetNode.x - CONFIG.nodeWidth / 2;
+        const endX = targetNode.x - targetW / 2;
         const endY = targetNode.y;
 
         // Horizontal offset for control points (creates smooth curve)
@@ -1078,9 +1088,10 @@
     // ============================================
     // Utilities
     // ============================================
-    function truncateLabel(label, maxLength) {
-        if (label.length <= maxLength) return label;
-        return label.substring(0, maxLength - 3) + '...';
+    function getNodeWidth(label) {
+        const charWidth = 7.5;
+        const padding = 30;
+        return Math.max(CONFIG.nodeWidth, label.length * charWidth + padding);
     }
 
     // ============================================
