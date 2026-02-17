@@ -27,8 +27,8 @@ data_warehouse_analysis_tool/
 │   ├── cli.py                 # CLI entry point (parse + lineage commands)
 │   └── analyzers/             # Analysis logic (future)
 ├── examples/
-│   ├── definitions/           # Sample YAML DAG files
-│   └── sql/                   # Sample SQL files (staging/, fact/, dimension/)
+│   ├── definitions/           # Sample YAML DAG files (teams, games, players, player_stats, standings)
+│   └── sql/                   # Sample SQL files (staging/, fact/, dimension/, mart/)
 ├── tests/
 ├── pyproject.toml
 ├── README.md                  # Detailed workflow documentation
@@ -118,11 +118,33 @@ data_warehouse_analysis_tool/
   - [x] `test_sql_parser.py` — load/format, INSERT parsing, MERGE parsing, edge cases
   - [x] `test_cli.py` — help, version, all parse subcommands, lineage generation
 
+### Session 6 - Expanded Examples, CREATE VIEW Support, Dynamic Node Sizing (2026-02-17)
+- [x] Expanded example data (NFL sports theme)
+  - [x] Added `players.yml` DAG — ingestion → staging (insert) → dimension (merge with team join)
+  - [x] Added `player_stats.yml` DAG — ingestion → staging (insert) → fact (insert with player + game joins)
+  - [x] Added `standings.yml` DAG — creates a mart view from team + game data
+  - [x] Added SQL files: `stg_player.sql`, `dim_player.sql`, `stg_player_stats.sql`, `fct_player_stats.sql`, `v_standings.sql`
+  - [x] Examples now cover all three SQL statement types: INSERT, MERGE, CREATE VIEW
+  - [x] Rich cross-DAG table dependencies for testing lineage graph
+- [x] Added CREATE VIEW/TABLE AS support to SQL parser
+  - [x] `_parse_create()` in `sql_parser.py` — extracts target + table deps from CREATE statements
+  - [x] `get_transaction_type()` now dispatches INSERT, MERGE, and CREATE
+- [x] Added `mart` data layer type
+  - [x] `_infer_table_type()` recognizes "mart" and "v_" prefixes
+  - [x] Added `mart` color mapping in `styles.css` (orange: `#ffedd5` fill / `#f97316` stroke)
+  - [x] Added `mart` entry in `NODE_COLORS` in `visualization.js` for legend
+- [x] Dynamic node sizing in visualization
+  - [x] Replaced fixed `CONFIG.nodeWidth` with per-node `getNodeWidth()` based on label length
+  - [x] Removed `truncateLabel()` — nodes now show full labels without truncation
+  - [x] `CONFIG.nodeWidth` (180px) retained as minimum width
+  - [x] Dynamic width used in: dagre layout, rendering, dragging, edge path calculation
+  - [x] Applied to both DAG view and flat (table/metric) view
+
 ---
 
 ## Current Status
 
-**Phase:** Table Lineage v2 Complete (SQL-driven via sqlglot)
+**Phase:** Expanded examples + CREATE VIEW support + dynamic UI
 
 **Working CLI Commands:**
 ```bash
@@ -141,11 +163,20 @@ dwat lineage <path> -o out.html --open   # Generate and open in browser
 - Extract tasks, dependencies, operators, parameters
 - Multi-view toggle: DAG view (operator-based), Table view (data layer-based), Metric view (placeholder)
 - DAG view shows tasks inside DAG container boxes with `depends_on` lineage
-- Table view (v2) parses SQL files with sqlglot to extract table dependencies (INSERT, MERGE)
+- Table view (v2) parses SQL files with sqlglot to extract table dependencies (INSERT, MERGE, CREATE VIEW)
 - Jinja2 template variables in SQL resolved from YAML task params before parsing
 - Transitive reduction removes redundant edges from lineage graph
+- Dynamic node sizing — nodes auto-size to fit label text
+- Data layer types: source, staging, dimension, fact, mart
 - Generate self-contained interactive HTML visualization
 - Test suite: 25 pytest tests covering parsers and CLI
+
+**Example Data (5 DAGs, 8 SQL files):**
+- `load_teams` — dim_team (merge)
+- `load_games` — stg_game (insert) → fct_game (insert + joins)
+- `load_players` — stg_player (insert) → dim_player (merge + team join)
+- `load_player_stats` — stg_player_stats (insert) → fct_player_stats (insert + player/game joins)
+- `build_standings` — v_standings (create view from team + game)
 
 ---
 
@@ -203,7 +234,6 @@ The tool should support three distinct lineage perspectives:
 
 **Still TODO:**
 - [ ] Handle CTEs and subqueries (currently only top-level FROM/JOIN)
-- [ ] Support CREATE TABLE AS SELECT (CTAS)
 - [ ] Support UPDATE statements
 
 ---
